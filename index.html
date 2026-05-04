@@ -284,13 +284,12 @@ body {
 .content-area::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
 /* Grid — CSS grid is the no-JS fallback; JS enhances to masonry */
-.grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
 .grid:not(.active) { display: none !important; }
-@media (max-width: 1400px) { .grid { grid-template-columns: repeat(3, 1fr); } }
 @media (max-width: 1100px) { .grid { grid-template-columns: repeat(2, 1fr); } }
 /* When JS masonry is active */
-.grid.masonry.active { display: flex; gap: 16px; }
-.masonry-col { flex: 1; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.grid.masonry.active { display: flex; gap: 24px; }
+.masonry-col { flex: 1; display: flex; flex-direction: column; gap: 24px; min-width: 0; }
 
 /* Bulk Select */
 .card-select {
@@ -1542,8 +1541,7 @@ function getMasonryCols() {
   const w = window.innerWidth;
   if (w <= 600) return 1;
   if (w <= 1100) return 2;
-  if (w <= 1400) return 3;
-  return 4;
+  return 3;
 }
 
 function masonryLayout(grid) {
