@@ -1,0 +1,8 @@
+{
+  "name": "stash",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "@quietloudlab/ai-interaction-atlas": "^1.0.10"
+  }
+}
