@@ -306,7 +306,7 @@ body {
 .selecting .card .card-select { opacity: 1; }
 .card.bulk-selected .card-select { opacity: 1; background: var(--accent); border-color: var(--accent); }
 .card.bulk-selected .card-select svg { display: block; }
-.card.bulk-selected { transform: scale(0.96); box-shadow: 0 0 0 2px var(--accent); }
+.card.bulk-selected { transform: scale(0.96); border-color: transparent; box-shadow: 0 0 0 2px var(--accent); }
 
 .bulk-bar {
   position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
@@ -357,7 +357,7 @@ body {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(100%); }
 }
-.skel-image { width: 100%; aspect-ratio: 1.91/1; border-radius: 20px; }
+.skel-image { width: 100%; aspect-ratio: 1.91/1; border-radius: 0; }
 .skel-domain { width: 120px; height: 12px; margin-bottom: 10px; }
 .skel-title { width: 85%; height: 16px; margin-bottom: 8px; }
 .skel-title-short { width: 60%; height: 16px; margin-bottom: 14px; }
@@ -369,33 +369,34 @@ body {
 .card {
   position: relative;
   background: var(--bg-card);
-  border-radius: 32px;
+  border-radius: 16px;
   overflow: clip; cursor: pointer;
-  box-shadow: 0px 0px 0px 1px rgba(0,0,0,0.06), 0px 1px 2px -1px rgba(0,0,0,0.06), 0px 2px 4px 0px rgba(0,0,0,0.04);
-  transition: transform 500ms var(--ease-out), box-shadow 500ms var(--ease-out);
+  border: 1px solid rgba(0,0,0,0.07);
+  box-shadow: none;
+  transition: border-color 200ms ease, box-shadow 200ms ease;
   animation: card-in 400ms var(--ease-out) backwards;
 }
-.card:hover { transform: translateY(-2px); box-shadow: 0 12px 40px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04); }
-.card.card-selected { box-shadow: 0 0 0 2px var(--accent); transform: none; }
-.card-keyboard-active .card:not(.card-selected):hover { transform: none; box-shadow: 0px 0px 0px 1px rgba(0,0,0,0.06), 0px 1px 2px -1px rgba(0,0,0,0.06), 0px 2px 4px 0px rgba(0,0,0,0.04); }
+.card:hover { border-color: rgba(0,0,0,0.13); box-shadow: 0 4px 20px rgba(0,0,0,0.06); }
+.card.card-selected { border-color: transparent; box-shadow: 0 0 0 2px var(--accent); }
+.card-keyboard-active .card:not(.card-selected):hover { border-color: rgba(0,0,0,0.07); box-shadow: none; }
 .card-dead-badge {
-  position: absolute; top: 18px; left: 18px; z-index: 2;
+  position: absolute; top: 12px; left: 12px; z-index: 2;
   font-size: 10px; font-weight: 600; color: var(--tag-rose-text);
   background: var(--tag-rose); padding: 4px 8px; border-radius: 6px;
 }
-.card-image-wrapper { padding: 12px 12px 0; }
-.card-image { width: 100%; aspect-ratio: 1.91/1; object-fit: cover; display: block; background: var(--bg-hover); border-radius: 20px; outline: 1px solid rgba(0,0,0,0.1); outline-offset: -1px; }
-.card-placeholder-wrapper { padding: 12px 12px 0; }
+.card-image-wrapper { padding: 0; }
+.card-image { width: 100%; aspect-ratio: 1.91/1; object-fit: cover; display: block; background: var(--bg-hover); border-radius: 0; outline: 1px solid rgba(0,0,0,0.07); outline-offset: -1px; }
+.card-placeholder-wrapper { padding: 0; }
 .card-placeholder {
   width: 100%; aspect-ratio: 1.91/1; display: flex; align-items: center;
-  justify-content: center; overflow: hidden; border-radius: 20px;
+  justify-content: center; overflow: hidden; border-radius: 0;
 }
 .card-placeholder-icon {
   width: 48px; height: 48px; border-radius: var(--radius-md); background: var(--bg-card);
   box-shadow: var(--shadow-md); display: flex; align-items: center; justify-content: center;
   font-size: 18px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; z-index: 1;
 }
-.card-body { padding: 16px 20px 20px; }
+.card-body { padding: 14px 18px 18px; }
 .card-domain { font-size: 12px; font-weight: 500; color: var(--text-tertiary); padding-bottom: 6px; letter-spacing: 0.24px; display: flex; align-items: center; gap: 4px; }
 .card-domain-link { color: inherit; text-decoration: none; }
 .card-domain-link:hover { text-decoration: underline; }
@@ -425,7 +426,7 @@ body {
 .card-meta-left { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .card-tags { display: flex; gap: 4px; align-items: center; flex-shrink: 1; min-width: 0; overflow: hidden; margin-left: auto; }
 .card-fav {
-  position: absolute; top: 14px; right: 14px; width: 28px; height: 28px;
+  position: absolute; top: 10px; right: 10px; width: 28px; height: 28px;
   display: flex; align-items: center; justify-content: center;
   border: none;
   background: rgba(255,255,255,0.85);
@@ -461,7 +462,7 @@ body {
 .card-fav.anim-unfav {
   animation: heart-break 400ms ease-out;
 }
-.card-meta { display: flex; align-items: center; gap: 8px; margin-top: 24px; }
+.card-meta { display: flex; align-items: center; gap: 8px; margin-top: 16px; }
 .card-date {
   font-size: 10px; font-weight: 600; letter-spacing: 0.1px;
   color: rgba(26,26,26,0.48); background: rgba(26,26,26,0.04);
