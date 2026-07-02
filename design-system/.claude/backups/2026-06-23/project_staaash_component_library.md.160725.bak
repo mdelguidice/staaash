@@ -1,0 +1,46 @@
+---
+name: Staaash component library
+description: Figma-first → code design system for Staaash — component inventory, emoji property-language legend, Button master spec, feel-pass convention, token naming
+metadata:
+  type: project
+---
+
+Building a basic component library for **Staaash** ([[project_stash]]), modeled on the Align UI Figma design system Mike likes (emoji-prefixed component properties, granular specs). Started 2026-06-12.
+
+**Medium:** Figma first (source of truth) → mirror to code (React `v2/`). **Scope:** exactly the Staaash app surface + the primitives it needs (not a full Align-UI-breadth kit).
+
+## Property language (emoji legend — locked, reused across ALL components)
+- 🎨 Intent (pick-one) · 🎚 Emphasis (pick-one) · 📐 Size (pick-one) · ✦ State (pick-one)
+- ✏️ Label (text) · ⬡ Leading/Trailing icon (toggle) · 🔁 Icon (instance-swap) · 💊 Pill (toggle) · ⛶ Full width (toggle)
+
+## Component inventory (16 primitives + 15 composites + 6 likely-needed)
+- **Tier 1 primitives:** Icon, Button, Icon Button, Text Input, Textarea, Tag/Pill, Badge, Checkbox, Segmented Control, Toggle, Tooltip, Kbd, Spinner, Skeleton, Divider, Avatar/Favicon
+- **Tier 2 composites:** Bookmark Card, List Row, Sidebar Nav Item, Sidebar Section, Topbar, Detail Drawer, Ask Bar, Dropdown/Context Menu, Modal, Confirm Dialog, Bulk Action Bar, Empty State, Tag Picker, Shortcuts Overlay, Toast
+- **Tier 3 likely-needed:** Popover, Command Palette (⌘K), Filter Bar, Dead-link/Status indicator, Progress bar, Settings panel
+- **Build order:** Tier 1 → Tier 2. Done: Button. Next candidates: Icon Button or Tag/Pill (Card leans on it).
+
+## Button master spec (locked) — full spec at `/Users/mike/Documents/claude-code/staaash/components/button.spec.md`
+- **Single 🎨 Variant axis** = Primary / Secondary / Ghost / Destructive, mapped 1:1 to his `btn-*` color tokens (Dark.json). REPLACED the old Intent×Emphasis 2-axis model. No "Info" button. Default = **Secondary / M** (Primary=volt stays opt-in per the "volt touches 4 things" rule).
+- **Sizes (grid-snapped, height = 2·pad-y + icon-box):** XS 24 / S 32 / M 36 / L 44 / XL 56. pad-x = space-100/150/200/250/300; pad-y = space-50/100/100/150/200; radius = radius-100/100/150/150/200. Icon-box 16/16/20/20/24.
+- **Anatomy: NO Figma Slots.** Each icon = a normal nested Icon INSTANCE with instance-swap (🔁) + boolean visibility (⬡). Figma Slots block property edits on their contents — never use them for the icon. Trailing instance can swap to a Kbd/Badge. Icon-only = Label off + pad-x=pad-y → square.
+- **Slot-vs-swap rule (library-wide):** curated+styleable+single → instance-swap; arbitrary/variable-count → Slot (Modal/Drawer body, Popover, Dropdown items, Card tag-row).
+- **Hidden-icon padding:** geometric self-corrects (auto-layout collapses gap). Optical asymmetry handled via **Option B** — keep booleans + equal padding + tight-bearing icons (no per-side padding variants); icon-only is square. Reserve local tweaks for hero buttons only.
+- **Optical centering:** fix at source — asymmetric glyphs nudged inside the Icon component; label uses Figma vertical-trim to cap height; icons sized to cap height not point size.
+- Press `scale(0.96)`; transitions 160ms `cubic-bezier(0.2,0,0,1)`, named props never `transition: all`.
+- **⚠️ Two token fixes flagged for Mike:** `btn-secondary/bg-active` #A2A2A2 is too light for #FAFAFA text (flip to text/inverse on press); `btn-ghost/bg-hover|active` stored as solid #FAFAFA but must be low-opacity alpha (use existing `acid/alpha-*` or `mist` alpha).
+
+## Conventions
+- **✦ Feel Pass:** every component spec ends with the make-interfaces-feel-better 14-item checklist, each item marked with the concrete decision (or `n/a` + reason) so the skill is provably run. Mike asked to fold this in (2026-06-12).
+- All 5 design skills (design-reference, ui-ux-pro-max, frontend-design, make-interfaces-feel-better, web-design-guidelines) loaded before visual work, per CLAUDE.md.
+
+## Design tokens (done 2026-06-12)
+- **Naming = Google-style abstract hundreds.** Base 8px = `100`; token number = px × 12.5. Decoupled from px so density can be retuned without renaming.
+- **Spacing logic:** half-steps (every 4px) from 4→100px, then base-8 only (every 8px) from 104→200px. No 2px/quarter steps. `space-0`…`space-2500` (39 tokens).
+- **Radius:** `radius-0`(0) `-50`(4) `-100`(8) `-125`(10) `-150`(12) `-200`(16) `-250`(20) `-300`(24) `-400`(32) `-full`(999). Kept the ×12.5 formula → 24px is `radius-300` (Mike confirmed over his earlier `radius-275`).
+- **Off-grid cleanup applied:** Button pad-y 7/9 → snap to grid; 9px & 14px radii → 8/16.
+- **Import format = Figma NATIVE DTCG export** (NOT the community-plugin array/`modes`/`$scopes` shape — that failed to import). Reference: `~/Desktop/Files/Light.tokens.json`. Structure: top-level **object** → token key → `{ "$type": "number", "$value": <px>, "$extensions": { "com.figma.hiddenFromPublishing": false } }`. FLOAT vars use `$type:"number"` (not "float"); color vars use `$value` object `{colorSpace,components,alpha,hex}`. One file = one collection's one mode (filename = mode). Omit `com.figma.variableId` for new vars (Figma assigns on import). No `$scopes`/`$codeSyntax` in this format.
+- **Files:** `/Users/mike/Documents/claude-code/staaash/tokens/spacing.tokens.json` + `radius.tokens.json` (separate files, one collection each). Spacing scope `["GAP","WIDTH_HEIGHT"]`, radius scope `["CORNER_RADIUS"]`.
+
+## Open / next
+- Import the two token JSONs into Figma via the Variables Import/Export plugin.
+- Next components to spec: Icon Button (≈ Button, label off) or Tag/Pill (Card depends on it).

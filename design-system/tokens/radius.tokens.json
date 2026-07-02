@@ -1,0 +1,12 @@
+{
+  "radius-0": { "$type": "number", "$value": 0, "$extensions": { "com.figma.hiddenFromPublishing": false } },
+  "radius-50": { "$type": "number", "$value": 4, "$extensions": { "com.figma.hiddenFromPublishing": false } },
+  "radius-100": { "$type": "number", "$value": 8, "$extensions": { "com.figma.hiddenFromPublishing": false } },
+  "radius-125": { "$type": "number", "$value": 10, "$extensions": { "com.figma.hiddenFromPublishing": false } },
+  "radius-150": { "$type": "number", "$value": 12, "$extensions": { "com.figma.hiddenFromPublishing": false } },
+  "radius-200": { "$type": "number", "$value": 16, "$extensions": { "com.figma.hiddenFromPublishing": false } },
+  "radius-250": { "$type": "number", "$value": 20, "$extensions": { "com.figma.hiddenFromPublishing": false } },
+  "radius-300": { "$type": "number", "$value": 24, "$extensions": { "com.figma.hiddenFromPublishing": false } },
+  "radius-400": { "$type": "number", "$value": 32, "$extensions": { "com.figma.hiddenFromPublishing": false } },
+  "radius-full": { "$type": "number", "$value": 999, "$extensions": { "com.figma.hiddenFromPublishing": false } }
+}

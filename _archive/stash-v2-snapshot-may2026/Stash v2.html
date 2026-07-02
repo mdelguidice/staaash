@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Stash — a bookmark app for the curious</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css?v=8" />
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+  <script src="data.js"></script>
+  <script type="text/babel" src="tweaks-panel.jsx"></script>
+  <script type="text/babel" src="components.jsx"></script>
+  <script type="text/babel" src="overlays.jsx"></script>
+  <script type="text/babel" src="askbar.jsx"></script>
+  <link rel="stylesheet" href="askbar.css?v=5" />
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+
+const { useState, useEffect, useMemo, useRef, useCallback } = React;
+
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "accent": "#7AA2FF",
+  "density": "comfy",
+  "minColW": 300,
+  "showTags": true,
+  "showResurface": false,
+  "thumbnailStyle": "og",
+  "tilt": true
+} /*EDITMODE-END*/;
+
+function StashApp() {
+  const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
+  const [bookmarks, setBookmarks] = useState(() => {
+    try {
+      const raw = localStorage.getItem('stash_bookmarks_v2');
+      if (raw) return JSON.parse(raw);
+      // Migrate older v1 entries by overlaying current seed metadata (adds image fields, etc.)
+      const old = localStorage.getItem('stash_bookmarks_v1');
+      if (old) {
+        const v1 = JSON.parse(old);
+        const seedById = Object.fromEntries(window.SEED_BOOKMARKS.map((b) => [b.id, b]));
+        return v1.map((b) => ({ ...(seedById[b.id] || {}), ...b, image: (seedById[b.id] || {}).image || b.image }));
+      }
+    } catch {}
+    return window.SEED_BOOKMARKS;
+  });
+  const [activeFilter, setActiveFilter] = useState('all');
+  const [openItem, setOpenItem] = useState(null);
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [docOpen, setDocOpen] = useState(false);
+  const [toast, setToast] = useState(null);
+  const [justSaved, setJustSaved] = useState(null);
+  const [view, setView] = useState('gallery'); // gallery | list
+  const [askFilterIds, setAskFilterIds] = useState(null); // null = no filter
+  const [sbCollapsed, setSbCollapsed] = useState(() => {
+    try {return localStorage.getItem('stash_sb_collapsed') === '1';} catch {return false;}
+  });
+  useEffect(() => {
+    try {localStorage.setItem('stash_sb_collapsed', sbCollapsed ? '1' : '0');} catch {}
+  }, [sbCollapsed]);
+
+  const [theme, setTheme] = useState(() => {
+    try {return localStorage.getItem('stash_theme') || 'dark';} catch {return 'dark';}
+  });
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    try {localStorage.setItem('stash_theme', theme);} catch {}
+  }, [theme]);
+
+  // Persist to localStorage
+  useEffect(() => {
+    try {localStorage.setItem('stash_bookmarks_v2', JSON.stringify(bookmarks));} catch {}
+  }, [bookmarks]);
+
+  // Apply accent live
+  useEffect(() => {
+    document.documentElement.style.setProperty('--accent', t.accent);
+  }, [t.accent]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const onKey = (e) => {
+      const meta = e.metaKey || e.ctrlKey;
+      if (meta && e.key.toLowerCase() === 'k') {e.preventDefault();setPaletteOpen(true);} else
+      if (meta && e.key.toLowerCase() === 'n') {e.preventDefault();setSaveOpen(true);} else
+      if (e.key === 'Escape') {setSaveOpen(false);setPaletteOpen(false);setOpenItem(null);setDocOpen(false);}
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  const baseFiltered = useMemo(() => {
+    if (activeFilter === 'all') return bookmarks;
+    if (activeFilter === 'unread') return bookmarks.slice(0, 7);
+    if (activeFilter === 'today') return bookmarks.filter((b) => b.saved === 'just now');
+    if (activeFilter.startsWith('tag:')) {
+      const tag = activeFilter.slice(4);
+      return bookmarks.filter((b) => b.tags.includes(tag));
+    }
+    // smart collections
+    const map = {
+      craft: 'Craft & Detail', typography: 'Typography', motion: 'Motion',
+      inspiration: 'Inspiration', systems: 'Systems', reading: 'Reading List'
+    };
+    const name = map[activeFilter];
+    if (name) return bookmarks.filter((b) => b.collection === name);
+    return bookmarks;
+  }, [bookmarks, activeFilter]);
+
+  const filtered = useMemo(() => {
+    if (askFilterIds === null) return baseFiltered;
+    if (askFilterIds.length === 0) return [];
+    const set = new Set(askFilterIds);
+    // preserve relevance order from AskBar
+    const ordered = askFilterIds.map((id) => baseFiltered.find((b) => b.id === id)).filter(Boolean);
+    return ordered.length ? ordered : baseFiltered.filter((b) => set.has(b.id));
+  }, [baseFiltered, askFilterIds]);
+
+  const handleSave = (b) => {
+    setBookmarks([b, ...bookmarks]);
+    setJustSaved(b.id);
+    setToast({ msg: 'Saved · ' + (b.title.length > 36 ? b.title.slice(0, 36) + '…' : b.title) });
+    setTimeout(() => setToast(null), 2700);
+    setTimeout(() => setJustSaved(null), 1700);
+  };
+
+  const headerTitle = useMemo(() => {
+    if (activeFilter === 'all') return 'Everything';
+    if (activeFilter === 'unread') return 'Unread';
+    if (activeFilter === 'today') return 'Saved today';
+    if (activeFilter.startsWith('tag:')) return '#' + activeFilter.slice(4);
+    const c = window.SMART_COLLECTIONS.find((x) => x.id === activeFilter);
+    return c ? c.name : 'Everything';
+  }, [activeFilter]);
+
+  const resurfaceItems = useMemo(() => bookmarks.filter((b) => /month/.test(b.saved)).slice(0, 4), [bookmarks]);
+
+  return (
+    <React.Fragment>
+          <div className={`app ${sbCollapsed ? 'sb-is-collapsed' : ''}`}>
+            <Sidebar
+          active={activeFilter}
+          onPick={setActiveFilter}
+          onAdd={() => setSaveOpen(true)}
+          onPalette={() => setPaletteOpen(true)}
+          savedCount={bookmarks.length}
+          collapsed={sbCollapsed}
+          onToggleCollapse={() => setSbCollapsed(!sbCollapsed)} />
+        
+
+            <main className="main">
+              <div className="blur-stack" aria-hidden="true">
+                <div className="blur-layer l1" />
+                <div className="blur-layer l2" />
+                <div className="blur-layer l3" />
+                <div className="blur-layer l4" />
+                <div className="blur-layer l5" />
+                <div className="blur-layer l6" />
+                <div className="blur-layer l7" />
+              </div>
+              <div className="blur-tint" aria-hidden="true" />
+              <div className="topbar" style={{ height: "80px", borderStyle: "none" }}>
+                <div className="tb-left">
+                  <h1 className="tb-title">{headerTitle}</h1>
+                  <span className="tb-meta">{filtered.length} bookmark{filtered.length === 1 ? '' : 's'}</span>
+                </div>
+                <div className="tb-right">
+                  <div className="tb-segment" role="tablist">
+                    <button className={`tb-btn ${view === 'gallery' ? 'is-active' : ''}`} onClick={() => setView('gallery')}>Gallery</button>
+                    <button className={`tb-btn ${view === 'list' ? 'is-active' : ''}`} onClick={() => setView('list')}>List</button>
+                  </div>
+                  <button className="tb-btn" onClick={() => setSaveOpen(true)}>+ New</button>
+                  <button
+                className="tb-btn tb-theme"
+                onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+                aria-label="Toggle theme">
+                
+                    {theme === 'dark' ?
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <circle cx="12" cy="12" r="4" />
+                        <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+                      </svg> :
+
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                      </svg>
+                }
+                  </button>
+                </div>
+              </div>
+
+              {t.showResurface && resurfaceItems.length >= 3 && activeFilter === 'all' &&
+          <div className="resurface">
+                  <div className="resurface-l">
+                    <div className="resurface-eyebrow"><span className="orb" /> From your stash · this week</div>
+                    <div className="resurface-line">You saved 4 things last month worth a re-read.</div>
+                    <div className="resurface-sub">Pinned by recency, tag overlap, and time-of-day patterns.</div>
+                  </div>
+                  <div className="resurface-thumbs">
+                    {resurfaceItems.map((b) =>
+              <button key={b.id} className="resurface-thumb"
+              style={{ background: b.color, color: b.accent }}
+              title={b.title}
+              onClick={() => setOpenItem(b)}>
+                        {b.favIcon}
+                      </button>
+              )}
+                  </div>
+                </div>
+          }
+
+              <div className="gallery">
+                {filtered.length === 0 ?
+            <div className="empty">
+                    <div className="empty-inner">
+                      <div className="empty-mark">
+                        <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">
+                          <path d="M5 4 H19 V20 L12 16 L5 20 Z" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+                        </svg>
+                      </div>
+                      <div className="empty-h">Paste a link. We'll do the rest.</div>
+                      <div className="empty-sub">
+                        Stash auto-tags, finds the right collection, and pulls a thumbnail so your library feels curated from the very first save.
+                      </div>
+                      <button className="empty-cta" onClick={() => setSaveOpen(true)}>
+                        <span>Save your first bookmark</span>
+                        <span style={{ opacity: .6, fontSize: 11 }}>⌘ N</span>
+                      </button>
+                    </div>
+                  </div> :
+            view === 'gallery' ?
+            <Masonry
+              items={filtered}
+              minColW={t.minColW}
+              gap={t.density === 'compact' ? 12 : t.density === 'comfy' ? 22 : 16}
+              density={t.density}
+              render={(b) =>
+              <div className={justSaved === b.id ? 'just-saved-wrap' : ''}>
+                        <div className={`card-wrap ${justSaved === b.id ? '' : ''}`}>
+                          <Card b={b} onOpen={setOpenItem} dense={t.density === 'compact' || !t.showTags} />
+                        </div>
+                      </div>
+              } /> :
+
+
+            <div className="list-view">
+                    {filtered.map((b) =>
+              <button key={b.id} className="list-row" onClick={() => setOpenItem(b)}>
+                        <span className="list-fav" style={{ background: b.accent }}>{b.favIcon}</span>
+                        <span className="list-title">{b.title}</span>
+                        <span className="list-site">{b.site}</span>
+                        <span className="list-tags">{b.tags.slice(0, 2).map((t) => '#' + t).join(' ')}</span>
+                        <span className="list-time">{b.saved}</span>
+                      </button>
+              )}
+                  </div>
+            }
+              </div>
+            </main>
+          </div>
+
+          <div className="doc-anchor-top">
+            <DirectionDoc open={docOpen} onToggle={() => setDocOpen(!docOpen)} />
+          </div>
+
+          <AskBar
+        items={bookmarks}
+        onPickItem={(b) => setOpenItem(b)}
+        onFilter={setAskFilterIds}
+        onAdd={() => setSaveOpen(true)}
+        onSetCollection={(id) => {setAskFilterIds(null);setActiveFilter(id);}}
+        leftOffset={sbCollapsed ? 56 : 264} />
+      
+
+          <SaveModal open={saveOpen} onClose={() => setSaveOpen(false)} onSave={handleSave} />
+          {openItem &&
+      <DetailPane bookmark={openItem} all={bookmarks}
+      onClose={() => setOpenItem(null)}
+      onOpen={(b) => setOpenItem(b)} />
+      }
+          <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)}
+      items={bookmarks}
+      onPick={(b) => {setPaletteOpen(false);setOpenItem(b);}} />
+
+          {toast &&
+      <div className="toast"><span className="toast-orb" />{toast.msg}</div>
+      }
+
+          <TweaksPanel>
+            <TweakSection label="Layout" />
+            <TweakRadio label="Density" value={t.density}
+        options={['compact', 'regular', 'comfy']}
+        onChange={(v) => setTweak('density', v)} />
+            <TweakSlider label="Min column" value={t.minColW} min={220} max={420} step={10} unit="px"
+        onChange={(v) => setTweak('minColW', v)} />
+            <TweakToggle label="Show tag chips on cards" value={t.showTags}
+        onChange={(v) => setTweak('showTags', v)} />
+            <TweakToggle label="Resurface strip" value={t.showResurface}
+        onChange={(v) => setTweak('showResurface', v)} />
+
+            <TweakSection label="Color" />
+            <TweakColor label="Accent" value={t.accent}
+        onChange={(v) => setTweak('accent', v)} />
+
+            <TweakSection label="Motion" />
+            <TweakToggle label="Pointer tilt on cards" value={t.tilt}
+        onChange={(v) => {setTweak('tilt', v);document.body.classList.toggle('no-tilt', !v);}} />
+          </TweaksPanel>
+        </React.Fragment>);
+
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<StashApp />);
+</script>
+</body>
+</html>

@@ -1,0 +1,1 @@
+- `2026-06-23 15:58:28` | ERROR | BUILD | mcp__c5bc2a10-3d27-42ea-8878-c3140a7d9eb0__use_figma | TypeError: figma.getVariableByIdAsync: no such property 'getVariableByIdAsync' on the figma global object
