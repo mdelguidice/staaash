@@ -29,6 +29,7 @@ const MIME = {
   ".html": "text/html",
   ".css": "text/css",
   ".js": "text/javascript",
+  ".jsx": "text/javascript",
   ".json": "application/json",
   ".png": "image/png",
   ".jpg": "image/jpeg",
@@ -664,7 +665,7 @@ const server = createServer(async (req, res) => {
   }
 
   // Static files
-  let filePath = url.pathname === "/" ? "/index.html" : url.pathname;
+  let filePath = (url.pathname === "/" || url.pathname.endsWith("/")) ? url.pathname.replace(/\/?$/, "/index.html") : url.pathname;
   const fullPath = join(DIR, filePath);
   const ext = extname(fullPath);
   const mime = MIME[ext] || "application/octet-stream";
