@@ -1,0 +1,32 @@
+{
+  "name": "staaash",
+  "productName": "staaash",
+  "version": "1.0.0",
+  "description": "Local-first bookmarking. Everything visible, nothing buried.",
+  "author": "Mike DelGuidice",
+  "main": "./out/main/index.js",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "postinstall": "node scripts/fetch-sqlite-prebuild.mjs",
+    "dist": "electron-vite build && electron-builder --mac"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.90.0",
+    "better-sqlite3": "^12.11.1"
+  },
+  "devDependencies": {
+    "@fontsource/instrument-sans": "^5.2.8",
+    "@fontsource/instrument-serif": "^5.2.8",
+    "@vitejs/plugin-react": "^5.0.0",
+    "vite": "^7.3.6",
+    "electron": "~42.1.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "sharp": "^0.35.3"
+  }
+}

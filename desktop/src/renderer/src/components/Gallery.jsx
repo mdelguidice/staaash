@@ -1,0 +1,232 @@
+import { useState, useRef, useMemo, useLayoutEffect, useEffect, useCallback } from 'react'
+import { HeartIcon, CheckIcon, ExtLinkIcon, NoteIcon } from './Icons.jsx'
+import { timeAgo, hashColor, imageSrc, domainInitial } from '../lib/format.js'
+
+const GAP = 24
+const MIN_COL_W = 300
+const MAX_COLS = 3
+const META_H = 34 // domain row below the image
+const DEFAULT_ASPECT = 16 / 10
+
+export default function Gallery({
+  items,
+  collections,
+  tags,
+  focusedIndex,
+  selection,
+  onOpenDrawer,
+  onOpen,
+  onFavorite,
+  onSelect
+}) {
+  const wrapRef = useRef(null)
+  const [width, setWidth] = useState(0)
+  const [aspects, setAspects] = useState({})
+
+  useLayoutEffect(() => {
+    const el = wrapRef.current
+    if (!el) return
+    setWidth(el.clientWidth)
+    const ro = new ResizeObserver(() => {
+      if (el.clientWidth > 0) setWidth(el.clientWidth)
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  const reportAspect = useCallback((id, aspect) => {
+    setAspects((prev) => (Math.abs((prev[id] || 0) - aspect) < 0.01 ? prev : { ...prev, [id]: aspect }))
+  }, [])
+
+  const { placements, totalH, colW } = useMemo(() => {
+    if (!width) return { placements: [], totalH: 0, colW: 0 }
+    const cols = Math.max(1, Math.min(MAX_COLS, Math.floor((width + GAP) / (MIN_COL_W + GAP))))
+    const colW = (width - GAP * (cols - 1)) / cols
+    const heights = new Array(cols).fill(0)
+    const placements = items.map((b, idx) => {
+      const aspect = aspects[b.id] || DEFAULT_ASPECT
+      const h = colW / aspect + META_H
+      const col = heights.indexOf(Math.min(...heights))
+      const x = col * (colW + GAP)
+      const y = heights[col]
+      heights[col] = y + h + GAP
+      return { b, idx, x, y }
+    })
+    return { placements, totalH: Math.max(...heights, 0), colW }
+  }, [items, width, aspects])
+
+  // keep the focused card in view for J/K navigation
+  const focusedId = focusedIndex >= 0 ? items[focusedIndex]?.id : null
+  useEffect(() => {
+    if (!focusedId) return
+    document
+      .querySelector(`[data-card-id="${CSS.escape(focusedId)}"]`)
+      ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }, [focusedId])
+
+  return (
+    <div ref={wrapRef} className="masonry" style={{ height: totalH }}>
+      {placements.map(({ b, idx, x, y }) => (
+        <div
+          key={b.id}
+          className="masonry-item"
+          style={{ transform: `translate3d(${x}px, ${y}px, 0)`, width: colW }}
+        >
+          <Card
+            bookmark={b}
+            collections={collections}
+            tags={tags}
+            focused={idx === focusedIndex}
+            selected={selection.includes(b.id)}
+            onClick={() => onOpenDrawer(b, idx)}
+            onOpen={onOpen}
+            onFavorite={onFavorite}
+            onSelect={onSelect}
+            onAspect={reportAspect}
+          />
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function Card({
+  bookmark: b,
+  collections,
+  tags,
+  focused,
+  selected,
+  onClick,
+  onOpen,
+  onFavorite,
+  onSelect,
+  onAspect
+}) {
+  const [imgFailed, setImgFailed] = useState(false)
+  const [heartAnim, setHeartAnim] = useState('')
+  const src = imageSrc(b)
+
+  // Backfill the local cache for remote-only previews so the gallery works offline
+  useEffect(() => {
+    if (!b.image_path && b.image_url) window.staaash['images:ensure'](b.id)
+  }, [b.id, b.image_path, b.image_url])
+  const collection = b.collection_id ? collections.find((c) => c.id === b.collection_id) : null
+  const cardTags = (b.tags || [])
+    .map((id) => tags.find((t) => t.id === id))
+    .filter(Boolean)
+    .slice(0, 3)
+
+  const heart = (e) => {
+    e.stopPropagation()
+    setHeartAnim(b.favorited ? 'just-unfav' : 'just-fav')
+    onFavorite(b)
+  }
+
+  return (
+    <article
+      className={`card${focused ? ' is-focused' : ''}`}
+      data-card-id={b.id}
+      onClick={onClick}
+      role="button"
+      tabIndex={-1}
+      aria-label={b.title || b.url}
+      style={{ contentVisibility: 'auto', containIntrinsicSize: '320px' }}
+    >
+      <div className="card-media">
+        {src && !imgFailed ? (
+          <img
+            className="card-img"
+            src={src}
+            alt=""
+            loading="lazy"
+            draggable={false}
+            onLoad={(e) => {
+              const { naturalWidth: w, naturalHeight: h } = e.currentTarget
+              if (w && h) onAspect(b.id, Math.min(Math.max(w / h, 0.6), 2.6))
+            }}
+            onError={() => {
+              setImgFailed(true)
+              onAspect(b.id, DEFAULT_ASPECT)
+              // If we only had a remote URL, ask main to cache it for next time
+              if (!b.image_path && b.image_url) window.staaash['images:ensure'](b.id)
+            }}
+          />
+        ) : (
+          <div className="card-ph" aria-hidden="true">
+            <span>{domainInitial(b)}</span>
+          </div>
+        )}
+
+        <div className="card-veil">
+          <div className="card-veil-title">{b.title || b.url}</div>
+          {(collection || cardTags.length > 0) && (
+            <div className="card-veil-pills">
+              {collection && (
+                <span className="pill pill-collection">
+                  <span
+                    className="pill-dot"
+                    style={{ background: collection.color || hashColor(collection.id) }}
+                  />
+                  {collection.name}
+                </span>
+              )}
+              {cardTags.map((t) => (
+                <span key={t.id} className="pill">
+                  {t.name}
+                </span>
+              ))}
+              {(b.tags || []).length > cardTags.length && (
+                <span className="pill" style={{ flex: 'none' }}>
+                  +{b.tags.length - cardTags.length}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+
+        <button
+          className={`card-check${selected ? ' is-on' : ''}`}
+          aria-label={selected ? 'Deselect' : 'Select'}
+          aria-pressed={selected}
+          onClick={(e) => {
+            e.stopPropagation()
+            onSelect(b.id)
+          }}
+        >
+          <CheckIcon size={13} />
+        </button>
+
+        <button
+          className={`card-heart${b.favorited ? ' is-on' : ''} ${heartAnim}`}
+          aria-label={b.favorited ? 'Unfavorite' : 'Favorite'}
+          aria-pressed={!!b.favorited}
+          onClick={heart}
+          onAnimationEnd={() => setHeartAnim('')}
+        >
+          <HeartIcon size={14} filled={b.favorited} />
+        </button>
+      </div>
+
+      <div className="card-meta">
+        <a
+          href={b.url}
+          onClick={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            onOpen(b)
+          }}
+          title={`Open ${b.domain || b.url}`}
+        >
+          <span className="card-fav" style={{ background: hashColor(b.domain || b.id) }}>
+            {domainInitial(b)}
+          </span>
+          <span className="card-domain">{b.domain || b.url}</span>
+          <ExtLinkIcon className="card-extlink" size={11} />
+        </a>
+        {b.note && <NoteIcon className="card-noteind" size={12} aria-label="Has note" />}
+        {b.is_dead ? <span className="card-dead" title="Link may be dead" /> : null}
+        <span className="card-time">{timeAgo(b.created_at)}</span>
+      </div>
+    </article>
+  )
+}

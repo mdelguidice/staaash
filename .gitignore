@@ -1,3 +1,10 @@
 node_modules/
 .cache/
 .env
+
+.DS_Store
+.claude/logs/
+.claude/backups/
+desktop/out/
+desktop/dist/
+desktop/build/staaash.iconset/
