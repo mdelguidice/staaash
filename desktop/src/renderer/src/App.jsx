@@ -245,7 +245,7 @@ export default function App() {
         if (shortcutsOpen) return setShortcutsOpen(false)
         if (settingsOpen) return setSettingsOpen(false)
         if (capture) return setCapture(null)
-        if (drawerId) return setDrawerId(null)
+        if (drawerId) return // the sheet owns Escape and animates its own dismissal
         if (selection.length) return setSelection([])
         if (query) {
           setQuery('')

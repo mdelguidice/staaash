@@ -26,7 +26,11 @@
   --radius-pill: 999px;
 
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
-  --dur-big: 280ms;   /* drawers, overlays, bar rise */
+  --ease-expo: cubic-bezier(0.16, 1, 0.3, 1); /* Stripe sheet rise — hard deceleration */
+  --ease-exit: cubic-bezier(0.4, 0, 0.6, 0.4); /* Stripe sheet dismiss — soft fade-drop */
+  --dur-big: 280ms;   /* overlays, bar rise */
+  --dur-sheet-in: 480ms;
+  --dur-sheet-out: 300ms;
   --dur-micro: 140ms; /* hover, toggles */
 
   --sidebar-w: 264px;
@@ -1029,42 +1033,97 @@ select {
   color: var(--danger);
 }
 
-/* ── Drawer ── */
+/* ── Drawer — Stripe-style floating sheet ──
+   Opens as a centered inset panel that fades in while rising ~40px on a
+   hard-deceleration curve; dismisses with a quicker fade + slight drop.
+   Transitions (not keyframes) so open/close can interrupt each other. */
 .drawer-scrim {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.35);
+  background: rgba(5, 5, 8, 0.55);
   z-index: 50;
-  animation: fade var(--dur-big) ease;
+  opacity: 0;
+  transition: opacity 360ms cubic-bezier(0.33, 0, 0.2, 1);
 }
 @keyframes fade {
   from { opacity: 0; }
   to { opacity: 1; }
 }
+.drawer-scrim.is-open {
+  opacity: 1;
+}
+.drawer-scrim.is-closing {
+  opacity: 0;
+  transition-duration: var(--dur-sheet-out);
+}
 .drawer {
   position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: min(440px, 92vw);
-  background: var(--surface);
-  border-left: 1px solid var(--border);
+  top: clamp(48px, 8vh, 96px);
+  bottom: -24px; /* the sheet bleeds past the viewport — bottom edge never shows */
+  left: 50%;
+  width: min(620px, calc(100vw - 80px));
+  background: var(--surface-2);
+  border: 1px solid #2a2a2f;
+  border-bottom: none;
+  border-radius: 20px 20px 0 0;
+  box-shadow: 0 -12px 60px rgba(0, 0, 0, 0.55), 0 -2px 18px rgba(0, 0, 0, 0.35);
   z-index: 51;
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
-  animation: drawer-in var(--dur-big) var(--ease-out);
+  overflow: hidden;
   user-select: text;
+  transform: translate(-50%, 105%);
+  transition: transform var(--dur-sheet-in) var(--ease-expo);
 }
-@keyframes drawer-in {
-  from { transform: translateX(40px); opacity: 0; }
-  to { transform: translateX(0); opacity: 1; }
+.drawer.is-open {
+  transform: translate(-50%, 0);
+}
+.drawer.is-closing {
+  transform: translate(-50%, 105%);
+  transition: transform var(--dur-sheet-out) cubic-bezier(0.5, 0, 0.75, 0.4);
+}
+/* the sheet sits on surface-2, so inset fields step down to surface */
+.drawer .note-view,
+.drawer .note-editor textarea,
+.drawer .select,
+.drawer .chip,
+.drawer .chip-input {
+  background: var(--surface);
+}
+[data-theme='light'] .drawer {
+  border-color: var(--border);
+}
+.drawer-scroll {
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.drawer-cols {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 4px 24px 64px; /* extra bottom room — the sheet's tail sits off-screen */
 }
 .drawer-head {
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 16px 0;
+  padding: 14px 16px 10px 24px;
+}
+.drawer-head-domain {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 12.5px;
+  color: var(--muted-2);
+  min-width: 0;
+}
+.drawer-head-domain span:last-child {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .drawer-head-actions {
   display: flex;
@@ -1121,7 +1180,6 @@ select {
 }
 
 .drawer-preview {
-  margin: 12px 16px 0;
   border-radius: 12px;
   overflow: hidden;
   background: var(--surface-2);
@@ -1132,15 +1190,14 @@ select {
   display: block;
   width: 100%;
   height: auto;
-  max-height: 260px;
+  max-height: 420px;
   object-fit: cover;
 }
 .drawer-body {
-  padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 18px;
-  flex: 1;
+  min-width: 0;
 }
 .drawer-title {
   font-size: 17px;
@@ -1324,10 +1381,131 @@ select {
   appearance: none;
   cursor: pointer;
 }
+.select-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 11px;
+  font-size: 13px;
+  transition: border-color var(--dur-micro) ease;
+}
+.select-btn:hover {
+  border-color: var(--muted-2);
+}
+.select-btn .select-value {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.select-btn .select-chevron {
+  flex: none;
+  color: var(--muted-2);
+}
+
+/* ── In-app popovers (tag picker, collection picker) ── */
+.popover-anchor {
+  position: relative;
+}
+.popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 280px;
+  background: #202024;
+  border: 1px solid #2e2e33;
+  border-radius: 12px;
+  padding: 6px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55), 0 4px 14px rgba(0, 0, 0, 0.4);
+  z-index: 6;
+  animation: pop-in var(--dur-micro) var(--ease-out);
+}
+.popover.popover-up {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+@keyframes pop-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.popover-search {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12.5px;
+  margin-bottom: 5px;
+}
+.popover-search:focus-visible {
+  outline: none;
+  border-color: var(--focus-ring);
+}
+.popover-list {
+  max-height: 216px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.popover-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 9px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--text);
+  text-align: left;
+  transition: background-color var(--dur-micro) ease;
+}
+.popover-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.popover-item .popover-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+.popover-item .popover-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.popover-item .popover-check {
+  flex: none;
+  color: var(--text-bright);
+}
+.popover-item.popover-create {
+  color: var(--muted-2);
+}
+.popover-item.popover-create:hover {
+  color: var(--text);
+}
+.popover-empty {
+  padding: 8px 9px;
+  font-size: 12.5px;
+  color: var(--muted-2);
+}
+[data-theme='light'] .popover {
+  background: var(--surface);
+  border-color: var(--border);
+}
 
 .drawer-open-btn {
   display: block;
   width: 100%;
+  margin-top: 2px;
   text-align: center;
   background: var(--text-bright);
   color: var(--canvas);

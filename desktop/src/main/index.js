@@ -55,7 +55,7 @@ function createWindow() {
         try {
           if (process.env.STAAASH_TEST_JS) {
             await mainWindow.webContents.executeJavaScript(process.env.STAAASH_TEST_JS)
-            await new Promise((r) => setTimeout(r, 900))
+            await new Promise((r) => setTimeout(r, Number(process.env.STAAASH_TEST_WAIT || 900)))
           }
           const image = await mainWindow.webContents.capturePage()
           const { writeFile } = await import('node:fs/promises')
