@@ -92,6 +92,7 @@ export function CaptureModal({ initialUrl, onSave, onClose }) {
 export function SettingsModal({ onClose, showToast }) {
   const [apiKey, setApiKey] = useState('')
   const [keyLoaded, setKeyLoaded] = useState(false)
+  const [rescan, setRescan] = useState(null) // null | {done, total}
 
   useEffect(() => {
     api['settings:get']('anthropic_api_key').then((v) => {
@@ -99,6 +100,23 @@ export function SettingsModal({ onClose, showToast }) {
       setKeyLoaded(true)
     })
   }, [])
+
+  useEffect(() => {
+    return api.on('media:rescan-progress', (p) => setRescan(p))
+  }, [])
+
+  const startRescan = async () => {
+    setRescan({ done: 0, total: 0 })
+    const res = await api['media:rescan']()
+    setRescan(null)
+    if (res.ok) {
+      showToast(
+        res.scanned === 0
+          ? 'Nothing to rescan — all thumbnails present'
+          : `Rescanned ${res.scanned} bookmark${res.scanned === 1 ? '' : 's'}`
+      )
+    }
+  }
 
   return (
     <Scrim onClose={onClose} label="Settings">
@@ -117,6 +135,23 @@ export function SettingsModal({ onClose, showToast }) {
         />
         <p className="modal-hint">
           Stored locally on this Mac. Without a key, the bar falls back to plain search.
+        </p>
+      </div>
+
+      <div className="field">
+        <label>Thumbnails</label>
+        <div className="modal-row">
+          <button className="btn" onClick={startRescan} disabled={!!rescan}>
+            {rescan
+              ? rescan.total
+                ? `Rescanning… ${rescan.done}/${rescan.total}`
+                : 'Rescanning…'
+              : 'Rescan missing thumbnails'}
+          </button>
+        </div>
+        <p className="modal-hint" aria-live="polite">
+          Refetches previews and favicons for bookmarks that don’t have one. The gallery fills
+          in live as they land.
         </p>
       </div>
 

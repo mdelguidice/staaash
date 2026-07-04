@@ -98,6 +98,12 @@ function migrateSchema(db) {
       VALUES (new.rowid, new.title, new.domain, new.note, new.content);
     END;
   `)
+
+  // Additive column migrations for databases created before these fields existed
+  const cols = db.prepare('PRAGMA table_info(bookmarks)').all().map((c) => c.name)
+  if (!cols.includes('favicon_path')) {
+    db.exec('ALTER TABLE bookmarks ADD COLUMN favicon_path TEXT')
+  }
 }
 
 // ── URL normalization (dedup) ──
@@ -180,6 +186,7 @@ export function insertBookmark(fields) {
     summary: fields.summary ?? null,
     image_url: fields.image_url ?? null,
     image_path: fields.image_path ?? null,
+    favicon_path: fields.favicon_path ?? null,
     created_at: fields.created_at ?? new Date().toISOString(),
     read_at: fields.read_at ?? null,
     archived_at: fields.archived_at ?? null,
@@ -194,17 +201,17 @@ export function insertBookmark(fields) {
     collection_id: fields.collection_id ?? null
   }
   db.prepare(`INSERT INTO bookmarks (id, url, normalized_url, title, domain, summary, image_url, image_path,
-      created_at, read_at, archived_at, deleted_at, favorited, source, hn_url, note, content,
+      favicon_path, created_at, read_at, archived_at, deleted_at, favorited, source, hn_url, note, content,
       last_checked, is_dead, collection_id)
     VALUES (@id, @url, @normalized_url, @title, @domain, @summary, @image_url, @image_path,
-      @created_at, @read_at, @archived_at, @deleted_at, @favorited, @source, @hn_url, @note, @content,
+      @favicon_path, @created_at, @read_at, @archived_at, @deleted_at, @favorited, @source, @hn_url, @note, @content,
       @last_checked, @is_dead, @collection_id)`).run(b)
   if (Array.isArray(fields.tags) && fields.tags.length) setBookmarkTags(id, fields.tags)
   return getBookmark(id)
 }
 
 const UPDATABLE = new Set([
-  'url', 'title', 'domain', 'summary', 'image_url', 'image_path', 'read_at', 'archived_at',
+  'url', 'title', 'domain', 'summary', 'image_url', 'image_path', 'favicon_path', 'read_at', 'archived_at',
   'deleted_at', 'favorited', 'source', 'hn_url', 'note', 'content', 'last_checked', 'is_dead',
   'collection_id'
 ])

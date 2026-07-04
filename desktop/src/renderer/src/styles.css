@@ -510,15 +510,35 @@ select {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
+/* the media box owns the card shape (per-bookmark aspect bucket);
+   the image cover-fills whatever shape it was dealt */
 .card-img {
-  display: block;
+  position: absolute;
+  inset: 0;
   width: 100%;
-  height: auto;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+/* letterboxed fit for images whose shape fights the card's — full image
+   over a blurred self-fill, so OG text never gets cropped away */
+.card-img.is-contain {
+  object-fit: contain;
+  z-index: 1;
+}
+.card-img-backdrop {
+  position: absolute;
+  inset: -8%;
+  width: 116%;
+  height: 116%;
+  object-fit: cover;
+  filter: blur(26px) saturate(1.15) brightness(0.55);
 }
 .card-ph {
+  position: absolute;
+  inset: 0;
   display: grid;
   place-items: center;
-  aspect-ratio: 16 / 10;
   background: linear-gradient(150deg, var(--surface) 0%, var(--surface-2) 100%);
 }
 .card-ph span {
@@ -687,6 +707,11 @@ select {
   font-size: 8.5px;
   font-weight: 700;
   color: #0d0d0f;
+}
+.card-fav-img {
+  flex: none;
+  object-fit: cover;
+  background: var(--surface-2);
 }
 .card-domain {
   min-width: 0;

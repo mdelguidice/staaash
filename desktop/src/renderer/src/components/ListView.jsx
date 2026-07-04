@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
-import { timeAgo, hashColor, domainInitial } from '../lib/format.js'
+import { timeAgo } from '../lib/format.js'
 import { NoteIcon } from './Icons.jsx'
+import Favicon from './Favicon.jsx'
 
 export default function ListView({ items, tags, focusedIndex, onOpenDrawer }) {
   const focusedId = focusedIndex >= 0 ? items[focusedIndex]?.id : null
@@ -25,9 +26,7 @@ export default function ListView({ items, tags, focusedIndex, onOpenDrawer }) {
             className={`list-row${idx === focusedIndex ? ' is-focused' : ''}`}
             onClick={() => onOpenDrawer(b, idx)}
           >
-            <span className="list-fav" style={{ background: hashColor(b.domain || b.id) }}>
-              {domainInitial(b)}
-            </span>
+            <Favicon bookmark={b} size={30} radius={8} />
             <span className="list-main">
               <span className="list-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 {b.title || b.url}

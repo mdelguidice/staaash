@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { XIcon, HeartIcon, DotsIcon, PlusIcon, CheckIcon, ChevronIcon } from './Icons.jsx'
-import { timeAgo, hashColor, imageSrc, domainInitial } from '../lib/format.js'
+import { timeAgo, hashColor, imageSrc } from '../lib/format.js'
+import Favicon from './Favicon.jsx'
 
 const CLOSE_MS = 320 // matches --dur-sheet-out (+ a hair of slack)
 
@@ -127,9 +128,7 @@ export default function Drawer({
       <aside className={`drawer${stateClass}`} role="dialog" aria-label={b.title || 'Bookmark details'}>
         <div className="drawer-head">
           <span className="drawer-head-domain">
-            <span className="card-fav" style={{ background: hashColor(b.domain || b.id) }}>
-              {domainInitial(b)}
-            </span>
+            <Favicon bookmark={b} />
             <span>{b.domain || b.url}</span>
           </span>
           <div className="drawer-head-actions" ref={menuRef}>

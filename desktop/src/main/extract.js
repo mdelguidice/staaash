@@ -116,12 +116,48 @@ export async function cacheImage(imgUrl) {
 }
 
 export async function findCached(hash) {
-  for (const ext of ['.jpg', '.png', '.gif', '.webp', '.jpeg']) {
+  for (const ext of ['.jpg', '.png', '.gif', '.webp', '.jpeg', '.ico', '.svg']) {
     try {
       await stat(join(imagesDir(), hash + ext))
       return hash + ext
     } catch {
       /* try next */
+    }
+  }
+  return null
+}
+
+// Fetch and cache a site favicon. Returns "hash.ext" or null.
+export async function fetchFavicon(domain) {
+  if (!domain) return null
+  const hash = createHash('sha256').update('favicon:' + domain).digest('hex').slice(0, 16)
+  const existing = await findCached(hash)
+  if (existing) return existing
+
+  const sources = [
+    `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=64`,
+    `https://${domain}/favicon.ico`
+  ]
+  for (const url of sources) {
+    try {
+      const res = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(8000) })
+      if (!res.ok) continue
+      const buffer = Buffer.from(await res.arrayBuffer())
+      if (buffer.length < 40) continue // skip empty / 1px placeholders
+      const ct = (res.headers.get('content-type') || '').split(';')[0].trim()
+      const ext = ct.includes('png')
+        ? '.png'
+        : ct.includes('svg')
+          ? '.svg'
+          : ct.includes('jpeg')
+            ? '.jpg'
+            : ct.includes('webp')
+              ? '.webp'
+              : '.ico'
+      await writeFile(join(imagesDir(), hash + ext), buffer)
+      return hash + ext
+    } catch {
+      /* try next source */
     }
   }
   return null

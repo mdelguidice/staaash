@@ -33,7 +33,8 @@ const INVOKE_CHANNELS = [
   'data:export-html',
   'data:import',
   'health:sweep',
-  'images:ensure'
+  'images:ensure',
+  'media:rescan'
 ]
 
 const EVENT_CHANNELS = [
@@ -41,6 +42,7 @@ const EVENT_CHANNELS = [
   'bookmarks:updated',
   'bookmarks:changed',
   'collections:changed',
+  'media:rescan-progress',
   'ui:open-capture',
   'ui:open-settings'
 ]

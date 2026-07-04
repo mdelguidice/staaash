@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react'
 import { SearchIcon } from './Icons.jsx'
-import { hashColor, domainInitial } from '../lib/format.js'
+import Favicon from './Favicon.jsx'
 
 const api = window.staaash
 
@@ -67,12 +67,7 @@ export default function AskBar({ inputRef, query, onQuery, resultCount, onPickSo
                 <div className="ask-sources">
                   {ask.sources.map((s) => (
                     <button key={s.id} className="ask-source" onClick={() => onPickSource(s)}>
-                      <span
-                        className="card-fav"
-                        style={{ background: hashColor(s.domain || s.id) }}
-                      >
-                        {domainInitial(s)}
-                      </span>
+                      <Favicon bookmark={s} />
                       <span className="ask-source-title">{s.title || s.url}</span>
                       <span className="ask-source-domain">{s.domain}</span>
                     </button>

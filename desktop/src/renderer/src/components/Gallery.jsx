@@ -1,12 +1,12 @@
-import { useState, useRef, useMemo, useLayoutEffect, useEffect, useCallback } from 'react'
+import { useState, useRef, useMemo, useLayoutEffect, useEffect } from 'react'
 import { HeartIcon, CheckIcon, ExtLinkIcon, NoteIcon } from './Icons.jsx'
-import { timeAgo, hashColor, imageSrc, domainInitial } from '../lib/format.js'
+import { timeAgo, imageSrc, domainInitial, cardAspect, shouldContain } from '../lib/format.js'
+import Favicon from './Favicon.jsx'
 
 const GAP = 24
 const MIN_COL_W = 300
 const MAX_COLS = 3
 const META_H = 34 // domain row below the image
-const DEFAULT_ASPECT = 16 / 10
 
 export default function Gallery({
   items,
@@ -21,7 +21,6 @@ export default function Gallery({
 }) {
   const wrapRef = useRef(null)
   const [width, setWidth] = useState(0)
-  const [aspects, setAspects] = useState({})
 
   useLayoutEffect(() => {
     const el = wrapRef.current
@@ -34,18 +33,13 @@ export default function Gallery({
     return () => ro.disconnect()
   }, [])
 
-  const reportAspect = useCallback((id, aspect) => {
-    setAspects((prev) => (Math.abs((prev[id] || 0) - aspect) < 0.01 ? prev : { ...prev, [id]: aspect }))
-  }, [])
-
   const { placements, totalH, colW } = useMemo(() => {
     if (!width) return { placements: [], totalH: 0, colW: 0 }
     const cols = Math.max(1, Math.min(MAX_COLS, Math.floor((width + GAP) / (MIN_COL_W + GAP))))
     const colW = (width - GAP * (cols - 1)) / cols
     const heights = new Array(cols).fill(0)
     const placements = items.map((b, idx) => {
-      const aspect = aspects[b.id] || DEFAULT_ASPECT
-      const h = colW / aspect + META_H
+      const h = colW / cardAspect(b.id) + META_H
       const col = heights.indexOf(Math.min(...heights))
       const x = col * (colW + GAP)
       const y = heights[col]
@@ -53,7 +47,7 @@ export default function Gallery({
       return { b, idx, x, y }
     })
     return { placements, totalH: Math.max(...heights, 0), colW }
-  }, [items, width, aspects])
+  }, [items, width])
 
   // keep the focused card in view for J/K navigation
   const focusedId = focusedIndex >= 0 ? items[focusedIndex]?.id : null
@@ -82,7 +76,6 @@ export default function Gallery({
             onOpen={onOpen}
             onFavorite={onFavorite}
             onSelect={onSelect}
-            onAspect={reportAspect}
           />
         </div>
       ))}
@@ -99,12 +92,13 @@ function Card({
   onClick,
   onOpen,
   onFavorite,
-  onSelect,
-  onAspect
+  onSelect
 }) {
   const [imgFailed, setImgFailed] = useState(false)
+  const [natural, setNatural] = useState(0)
   const [heartAnim, setHeartAnim] = useState('')
   const src = imageSrc(b)
+  const contain = shouldContain(b.id, natural)
 
   // Backfill the local cache for remote-only previews so the gallery works offline
   useEffect(() => {
@@ -132,25 +126,29 @@ function Card({
       aria-label={b.title || b.url}
       style={{ contentVisibility: 'auto', containIntrinsicSize: '320px' }}
     >
-      <div className="card-media">
+      <div className="card-media" style={{ aspectRatio: cardAspect(b.id) }}>
         {src && !imgFailed ? (
-          <img
-            className="card-img"
-            src={src}
-            alt=""
-            loading="lazy"
-            draggable={false}
-            onLoad={(e) => {
-              const { naturalWidth: w, naturalHeight: h } = e.currentTarget
-              if (w && h) onAspect(b.id, Math.min(Math.max(w / h, 0.6), 2.6))
-            }}
-            onError={() => {
-              setImgFailed(true)
-              onAspect(b.id, DEFAULT_ASPECT)
-              // If we only had a remote URL, ask main to cache it for next time
-              if (!b.image_path && b.image_url) window.staaash['images:ensure'](b.id)
-            }}
-          />
+          <>
+            {contain && (
+              <img className="card-img-backdrop" src={src} alt="" aria-hidden="true" draggable={false} />
+            )}
+            <img
+              className={`card-img${contain ? ' is-contain' : ''}`}
+              src={src}
+              alt=""
+              loading="lazy"
+              draggable={false}
+              onLoad={(e) => {
+                const { naturalWidth: w, naturalHeight: h } = e.currentTarget
+                if (w && h) setNatural(w / h)
+              }}
+              onError={() => {
+                setImgFailed(true)
+                // If we only had a remote URL, ask main to cache it for next time
+                if (!b.image_path && b.image_url) window.staaash['images:ensure'](b.id)
+              }}
+            />
+          </>
         ) : (
           <div className="card-ph" aria-hidden="true">
             <span>{domainInitial(b)}</span>
@@ -217,9 +215,7 @@ function Card({
           }}
           title={`Open ${b.domain || b.url}`}
         >
-          <span className="card-fav" style={{ background: hashColor(b.domain || b.id) }}>
-            {domainInitial(b)}
-          </span>
+          <Favicon bookmark={b} />
           <span className="card-domain">{b.domain || b.url}</span>
           <ExtLinkIcon className="card-extlink" size={11} />
         </a>

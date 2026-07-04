@@ -33,6 +33,30 @@ export function hashColor(id) {
   return TAG_COLORS[h % TAG_COLORS.length]
 }
 
+// Deterministic per-bookmark card shape — a weighted mix of landscape,
+// square, and portrait so the masonry reads varied, not uniform.
+const CARD_ASPECTS = [1.78, 1.6, 1.42, 1.25, 1.0, 1.0, 0.85]
+
+export function cardAspect(id) {
+  let h = 7
+  const s = String(id)
+  for (let i = 0; i < s.length; i++) h = (h * 33 + s.charCodeAt(i)) >>> 0
+  return CARD_ASPECTS[h % CARD_ASPECTS.length]
+}
+
+// When the card shape deviates this far from the image's natural ratio,
+// the card letterboxes the full image over a blurred fill instead of
+// cover-cropping — text-heavy OG banners stay legible.
+export function shouldContain(id, naturalAspect) {
+  if (!naturalAspect) return false
+  const bucket = cardAspect(id)
+  return bucket < naturalAspect * 0.9 || bucket > naturalAspect * 1.25
+}
+
+export function faviconSrc(bookmark) {
+  return bookmark.favicon_path ? `staaash-img://img/${bookmark.favicon_path}` : null
+}
+
 export function imageSrc(bookmark) {
   if (bookmark.image_path) return `staaash-img://img/${bookmark.image_path}`
   if (bookmark.image_url) return bookmark.image_url

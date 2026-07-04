@@ -4,7 +4,7 @@
 import { ipcMain, shell, dialog, clipboard, app } from 'electron'
 import { readFile, writeFile } from 'node:fs/promises'
 import * as db from './db.js'
-import { extractMeta, cacheImage, checkLink, cleanText } from './extract.js'
+import { extractMeta, cacheImage, checkLink, cleanText, fetchFavicon } from './extract.js'
 import { askStaaash, suggestCollection } from './ai.js'
 
 // Smart URL input: auto-prepend https://
@@ -42,11 +42,13 @@ export async function addBookmark({ url, title, note, source, tags }, notify) {
   // Enrich in the background; push the update to the renderer when done.
   extractMeta(finalUrl)
     .then(async (meta) => {
+      const favicon_path = await fetchFavicon(meta.domain ?? domain).catch(() => null)
       const updated = db.updateBookmark(item.id, {
         title: meta.title ?? item.title,
         summary: meta.summary,
         image_url: meta.image_url,
         image_path: meta.image_path,
+        favicon_path,
         domain: meta.domain ?? domain,
         content: meta.content ?? null
       })
@@ -255,6 +257,59 @@ export function registerIpc(getWindow) {
     }
     if (checked) notify('bookmarks:changed')
     return { checked, remaining: Math.max(0, stale.length - checked) }
+  })
+
+  // Recapture missing thumbnails + favicons across the library.
+  // Re-runs extraction for bookmarks with no local preview and fetches
+  // favicons for any domain that lacks one. Progress streams to the renderer.
+  let rescanRunning = false
+  handle('media:rescan', async () => {
+    if (rescanRunning) return { ok: false, reason: 'already-running' }
+    rescanRunning = true
+    try {
+      const targets = db
+        .listBookmarks()
+        .filter((b) => !b.deleted_at && (!b.image_path || !b.favicon_path))
+      let done = 0
+      const queue = [...targets]
+      const worker = async () => {
+        while (queue.length) {
+          const b = queue.shift()
+          try {
+            const patch = {}
+            if (!b.favicon_path && b.domain) {
+              const f = await fetchFavicon(b.domain)
+              if (f) patch.favicon_path = f
+            }
+            if (!b.image_path) {
+              if (b.image_url) {
+                const p = await cacheImage(b.image_url)
+                if (p) patch.image_path = p
+              }
+              if (!patch.image_path) {
+                const meta = await extractMeta(b.url)
+                if (meta.image_path) patch.image_path = meta.image_path
+                if (meta.image_url && !b.image_url) patch.image_url = meta.image_url
+                if (!b.summary && meta.summary) patch.summary = meta.summary
+                if (!b.content && meta.content) patch.content = meta.content
+              }
+            }
+            if (Object.keys(patch).length) {
+              const updated = db.updateBookmark(b.id, patch)
+              notify('bookmarks:updated', updated)
+            }
+          } catch {
+            /* keep sweeping */
+          }
+          done++
+          notify('media:rescan-progress', { done, total: targets.length })
+        }
+      }
+      await Promise.all(Array.from({ length: Math.min(6, targets.length) }, worker))
+      return { ok: true, scanned: targets.length }
+    } finally {
+      rescanRunning = false
+    }
   })
 
   // Lazily cache a remote image that migration couldn't resolve locally
