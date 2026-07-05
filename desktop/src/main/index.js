@@ -29,9 +29,11 @@ protocol.registerSchemesAsPrivileged([
 ])
 
 function createWindow() {
+  // STAAASH_WIN=1440x792 pins the window size (design-parity screenshots)
+  const [envW, envH] = (process.env.STAAASH_WIN || '').split('x').map(Number)
   mainWindow = new BrowserWindow({
-    width: 1520,
-    height: 940,
+    width: envW || 1520,
+    height: envH || 940,
     minWidth: 880,
     minHeight: 600,
     show: false,

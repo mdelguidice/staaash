@@ -3,10 +3,11 @@ import { HeartIcon, CheckIcon, ExtLinkIcon, NoteIcon } from './Icons.jsx'
 import { timeAgo, imageSrc, domainInitial, cardAspect, shouldContain } from '../lib/format.js'
 import Favicon from './Favicon.jsx'
 
-const GAP = 24
+const GAP_X = 20
+const GAP_Y = 12
 const MIN_COL_W = 300
 const MAX_COLS = 3
-const META_H = 34 // domain row below the image
+const META_H = 24 // 4px gap + 20px domain chip row
 
 export default function Gallery({
   items,
@@ -35,15 +36,15 @@ export default function Gallery({
 
   const { placements, totalH, colW } = useMemo(() => {
     if (!width) return { placements: [], totalH: 0, colW: 0 }
-    const cols = Math.max(1, Math.min(MAX_COLS, Math.floor((width + GAP) / (MIN_COL_W + GAP))))
-    const colW = (width - GAP * (cols - 1)) / cols
+    const cols = Math.max(1, Math.min(MAX_COLS, Math.floor((width + GAP_X) / (MIN_COL_W + GAP_X))))
+    const colW = (width - GAP_X * (cols - 1)) / cols
     const heights = new Array(cols).fill(0)
     const placements = items.map((b, idx) => {
       const h = colW / cardAspect(b.id) + META_H
       const col = heights.indexOf(Math.min(...heights))
-      const x = col * (colW + GAP)
+      const x = col * (colW + GAP_X)
       const y = heights[col]
-      heights[col] = y + h + GAP
+      heights[col] = y + h + GAP_Y
       return { b, idx, x, y }
     })
     return { placements, totalH: Math.max(...heights, 0), colW }
@@ -215,11 +216,11 @@ function Card({
           }}
           title={`Open ${b.domain || b.url}`}
         >
-          <Favicon bookmark={b} />
+          <Favicon bookmark={b} size={10} radius={3} />
           <span className="card-domain">{b.domain || b.url}</span>
-          <ExtLinkIcon className="card-extlink" size={11} />
+          <ExtLinkIcon className="card-extlink" size={9} />
         </a>
-        {b.note && <NoteIcon className="card-noteind" size={12} aria-label="Has note" />}
+        {b.note && <NoteIcon className="card-noteind" size={11} aria-label="Has note" />}
         {b.is_dead ? <span className="card-dead" title="Link may be dead" /> : null}
         <span className="card-time">{timeAgo(b.created_at)}</span>
       </div>

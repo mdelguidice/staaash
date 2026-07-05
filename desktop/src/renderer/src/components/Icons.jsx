@@ -72,8 +72,8 @@ export const ChevronIcon = ({ dir = 'down', ...p }) => {
 
 export const SidebarIcon = (p) => (
   <I {...p}>
-    <rect x="3.5" y="4.5" width="17" height="15" rx="2.5" />
-    <path d="M9.5 4.5v15" />
+    <rect x="3.5" y="4.5" width="17" height="15" rx="3.5" />
+    <rect x="6.2" y="7.2" width="5" height="9.6" rx="1.6" fill="currentColor" stroke="none" />
   </I>
 )
 

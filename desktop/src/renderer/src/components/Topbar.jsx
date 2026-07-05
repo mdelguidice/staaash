@@ -1,4 +1,4 @@
-import { SidebarIcon, FilterIcon, PlusIcon, SunIcon } from './Icons.jsx'
+import { FilterIcon, PlusIcon, SunIcon } from './Icons.jsx'
 
 export default function Topbar({
   title,
@@ -13,20 +13,23 @@ export default function Topbar({
   return (
     <header className="topbar">
       <button
-        className="tb-collapse"
+        className={`tb-collapse${sidebarCollapsed ? ' is-collapsed' : ''}`}
         onClick={onToggleSidebar}
         aria-label={sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar'}
         style={sidebarCollapsed ? { marginLeft: 62 } : undefined}
       >
-        <SidebarIcon size={17} />
+        <span className="tb-collapse-glyph" aria-hidden="true">
+          <span />
+          <span />
+        </span>
       </button>
       <div className="tb-title">
         <h1>{title}</h1>
         <span className="tb-sub">
-          · {count} bookmark{count === 1 ? '' : 's'}
+          • {count} bookmark{count === 1 ? '' : 's'}
         </span>
         <button className="tb-filter" aria-label="Filter">
-          <FilterIcon size={14} />
+          <FilterIcon size={18} />
         </button>
       </div>
 
@@ -50,7 +53,7 @@ export default function Topbar({
       </div>
 
       <button className="btn-new" onClick={onNew}>
-        <PlusIcon size={14} />
+        <PlusIcon size={9} strokeWidth="2.4" />
         New
       </button>
 

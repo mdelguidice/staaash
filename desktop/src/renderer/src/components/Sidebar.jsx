@@ -184,14 +184,16 @@ export default function Sidebar({
 
       <div className="sb-foot">
         <button className="sb-shortcuts" onClick={onOpenShortcuts}>
-          <HelpIcon className="sb-ico" size={16} />
+          <HelpIcon className="sb-ico" size={14} />
           <span className="sb-row-name">Shortcuts</span>
         </button>
         <div className="sb-status">
-          <span className="sb-status-dot" aria-hidden="true" />
-          <span className="sb-status-text">Stored locally · {savedCount} saved</span>
+          <span className="sb-status-pill">
+            <span className="sb-status-dot" aria-hidden="true" />
+            <span className="sb-status-text">Stored locally · {savedCount} saved</span>
+          </span>
           <button aria-label="Open settings" onClick={onOpenSettings}>
-            <SlidersIcon size={15} />
+            <SlidersIcon size={16} />
           </button>
         </div>
       </div>

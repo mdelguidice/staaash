@@ -79,11 +79,12 @@ export default function AskBar({ inputRef, query, onQuery, resultCount, onPickSo
         </div>
       )}
 
+      <div className="ask-blur" aria-hidden="true" />
       <div className="ask-wrap">
         <div className="ask">
           {/* passive label — deliberately not a button */}
           <span className="ask-chip">
-            <SearchIcon size={13} />
+            <SearchIcon size={10} />
             Ask Staaash
           </span>
           <input
