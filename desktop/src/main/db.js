@@ -334,11 +334,16 @@ export function listCollections() {
     .all()
 }
 
+// Figma collection-dot ramp (rose/coral/tangerine/moss/teal) — new
+// collections cycle through it so none is ever colorless.
+const COLLECTION_COLORS = ['#f43f5e', '#fb6b4d', '#f59e0b', '#5ba744', '#14b8a6']
+
 export function createCollection(name, color) {
   const id = `col_${Date.now()}_${randomUUID().slice(0, 8)}`
   const max = db.prepare('SELECT coalesce(max(position), 0) AS m FROM collections').get().m
+  const finalColor = color ?? COLLECTION_COLORS[max % COLLECTION_COLORS.length]
   db.prepare('INSERT INTO collections (id, name, color, position, created_at) VALUES (?, ?, ?, ?, ?)')
-    .run(id, name.trim(), color ?? null, max + 1, new Date().toISOString())
+    .run(id, name.trim(), finalColor, max + 1, new Date().toISOString())
   return db.prepare('SELECT * FROM collections WHERE id = ?').get(id)
 }
 

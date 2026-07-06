@@ -1,6 +1,6 @@
 import { useState, useRef, useMemo, useLayoutEffect, useEffect } from 'react'
 import { HeartIcon, CheckIcon, ExtLinkIcon, NoteIcon } from './Icons.jsx'
-import { timeAgo, imageSrc, domainInitial, cardAspect, shouldContain } from '../lib/format.js'
+import { timeAgo, hashColor, imageSrc, domainInitial, cardAspect, shouldContain } from '../lib/format.js'
 import Favicon from './Favicon.jsx'
 
 const GAP_X = 20
