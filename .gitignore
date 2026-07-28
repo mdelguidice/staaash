@@ -9,3 +9,10 @@ desktop/out/
 desktop/dist/
 desktop/build/staaash.iconset/
 .playwright-mcp/
+
+# visual diff: per-run outputs and the seeded fixture are regenerable.
+# The Figma reference cache in visual-diff/figma/ IS tracked — it lets the
+# harness run offline and without a FIGMA_TOKEN.
+visual-diff/*.png
+visual-diff/report.json
+tools/visual-diff/fixtures/*/home/

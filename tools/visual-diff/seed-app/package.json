@@ -1,0 +1,7 @@
+{
+  "name": "staaash-visual-diff-seed",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "main.mjs"
+}

@@ -1,0 +1,16 @@
+{
+  "name": "staaash-visual-diff",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Figma-vs-app visual diff harness. Standalone: touches no app code.",
+  "bin": { "visual-diff": "./index.mjs" },
+  "scripts": {
+    "diff": "node index.mjs"
+  },
+  "dependencies": {
+    "pixelmatch": "^6.0.0",
+    "playwright-core": "^1.49.1",
+    "sharp": "^0.35.3"
+  }
+}
