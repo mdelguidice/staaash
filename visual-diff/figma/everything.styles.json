@@ -1,70 +1,131 @@
 {
   "_source": "Figma file yPHeCTtyigj5XqiReFv8NW, node 5181-38",
-  "_refresh": "Properties: get_design_context on the node. Geometry: get_metadata (coords are absolute within the 1440x792 frame — sum the parent offsets).",
+  "_refresh": "Properties: get_design_context on the node. Geometry: get_metadata (coords are absolute within the 1440x792 frame \u2014 sum the parent offsets).",
   "_sources": {
-    "get_design_context": "generated React/Tailwind — fills, borders, radii, padding, type",
-    "get_metadata": "XML geometry — x, y, width, height only"
+    "get_design_context": "generated React/Tailwind \u2014 fills, borders, radii, padding, type",
+    "get_metadata": "XML geometry \u2014 x, y, width, height only"
   },
   "_rule": "Assert only what a source states outright. Where the two sources disagree, skip the property and record why in _skipped rather than picking one.",
-
   "selectors": {
     ".ask": {
       "_node": "5181:540",
       "_name": "search",
       "_skipped": {
-        "padding": "get_design_context generates py-[14px]; get_metadata places the chip 12px from the frame top. Both cannot hold, so neither is asserted."
+        "padding": "get_design_context generates py-[14px]; get_metadata places the chip 12px from the frame top. Both cannot hold, so neither is asserted.",
+        "effective background": "The fill is 92% translucent over a backdrop-filter blur, so the composited value depends on blur parameters that have not been compared against Figma's own blur vector (5181:539). Left unasserted deliberately; the residual ask-bar colour difference stays a lead."
       },
-      "background-color": { "value": "rgba(32, 30, 30, 0.92)", "source": "get_design_context" },
-      "border-radius": { "value": "16px", "source": "get_design_context" },
-      "box-shadow": { "value": "rgba(3, 3, 3, 0.2) 0px 4px 8px 0px", "source": "get_design_context" },
-      "border-top-color": { "value": "rgba(250, 255, 230, 0.04)", "source": "get_design_context" },
-      "border-top-width": { "value": "1px", "source": "get_design_context" },
-      "_rect": { "x": 506, "y": 728, "width": 692, "height": 48, "source": "get_metadata" }
+      "background-color": {
+        "value": "rgba(32, 30, 30, 0.92)",
+        "source": "get_design_context"
+      },
+      "border-radius": {
+        "value": "16px",
+        "source": "get_design_context"
+      },
+      "box-shadow": {
+        "value": "rgba(3, 3, 3, 0.2) 0px 4px 8px 0px",
+        "source": "get_design_context"
+      },
+      "border-top-color": {
+        "value": "rgba(250, 255, 230, 0.04)",
+        "source": "get_design_context"
+      },
+      "border-top-width": {
+        "value": "1px",
+        "source": "get_design_context"
+      },
+      "_rect": {
+        "x": 506,
+        "y": 728,
+        "width": 692,
+        "height": 48,
+        "source": "get_metadata"
+      }
     },
-
     ".ask-chip": {
       "_node": "5181:541",
       "_name": "ai",
-      "background-color": { "value": "rgba(79, 107, 237, 0.2)", "source": "get_design_context" },
-      "border-radius": { "value": "6px", "source": "get_design_context" },
-      "border-top-color": { "value": "rgba(79, 107, 237, 0.1)", "source": "get_design_context" },
-      "_rect": { "x": 518, "y": 740, "width": 101, "height": 24, "source": "get_metadata" }
+      "background-color": {
+        "value": "rgba(79, 107, 237, 0.2)",
+        "source": "get_design_context"
+      },
+      "border-radius": {
+        "value": "6px",
+        "source": "get_design_context"
+      },
+      "border-top-color": {
+        "value": "rgba(79, 107, 237, 0.1)",
+        "source": "get_design_context"
+      },
+      "_rect": {
+        "x": 518,
+        "y": 740,
+        "width": 101,
+        "height": 24,
+        "source": "get_metadata"
+      }
     },
-
     ".sb-row.is-active": {
       "_node": "5181:45",
       "_name": "Category Item (Everything, active)",
-      "background-color": { "value": "#ccff00", "source": "get_design_context" },
-      "border-radius": { "value": "8px", "source": "get_design_context" },
-      "padding": { "value": "8px", "source": "get_design_context" },
-      "gap": { "value": "8px", "source": "get_design_context" },
-      "_rect": { "x": 20, "y": 70, "width": 224, "height": 32, "source": "get_metadata" }
-    },
-
-    ".sb-count": {
-      "_node": "5181:50",
-      "_name": "number badge",
-      "_skipped": {
-        "color": "get_design_context puts the label at acid/900 #0d1d00 with opacity 0.8; the app applies no opacity, so the computed colour is not comparable without knowing whether the design intends the opacity to be baked in."
+      "background-color": {
+        "value": "#ccff00",
+        "source": "get_design_context"
       },
-      "background-color": { "value": "#b9e900", "source": "get_design_context" },
-      "border-radius": { "value": "4px", "source": "get_design_context" },
-      "padding": { "value": "4px", "source": "get_design_context" },
-      "_rect": { "x": 210, "y": 77, "width": 26, "height": 18, "source": "get_metadata" }
+      "border-radius": {
+        "value": "8px",
+        "source": "get_design_context"
+      },
+      "padding": {
+        "value": "8px",
+        "source": "get_design_context"
+      },
+      "gap": {
+        "value": "8px",
+        "source": "get_design_context"
+      },
+      "_rect": {
+        "x": 20,
+        "y": 70,
+        "width": 224,
+        "height": 32,
+        "source": "get_metadata"
+      }
     },
-
     ".seg": {
       "_node": "5181:213",
       "_name": "view-mode",
-      "background-color": { "value": "rgba(32, 30, 30, 0.64)", "source": "get_design_context" },
-      "border-radius": { "value": "10px", "source": "get_design_context" },
-      "border-top-color": { "value": "#414141", "source": "get_design_context" },
-      "border-top-width": { "value": "1px", "source": "get_design_context" },
-      "padding": { "value": "4px", "source": "get_design_context" },
-      "gap": { "value": "4px", "source": "get_design_context" },
-      "_rect": { "x": 1216, "y": 19, "width": 98, "height": 32, "source": "get_metadata" }
+      "background-color": {
+        "value": "rgba(32, 30, 30, 0.64)",
+        "source": "get_design_context"
+      },
+      "border-radius": {
+        "value": "10px",
+        "source": "get_design_context"
+      },
+      "border-top-color": {
+        "value": "#414141",
+        "source": "get_design_context"
+      },
+      "border-top-width": {
+        "value": "1px",
+        "source": "get_design_context"
+      },
+      "padding": {
+        "value": "4px",
+        "source": "get_design_context"
+      },
+      "gap": {
+        "value": "4px",
+        "source": "get_design_context"
+      },
+      "_rect": {
+        "x": 1216,
+        "y": 19,
+        "source": "get_metadata"
+      },
+      "_note": "Width/height deliberately not asserted: the control is sized by its button text. Position, padding, gap and fills are asserted instead."
     },
-
     ".card-media": {
       "_node": "5181:233",
       "_name": "Thumbnail (first card)",
@@ -72,11 +133,95 @@
         "height": "get_metadata gives 195, implying aspect 1.872. That is not one of the app's CARD_ASPECTS buckets (format.js), so asserting it would test the fixture's bucket choice rather than the app. The x/y assertion still catches where the grid starts.",
         "background-color": "The design fills the thumbnail with an image, so no background colour is stated; the app's --surface shows only where an image is missing."
       },
-      "border-radius": { "value": "16px", "source": "get_design_context" },
-      "border-top-color": { "value": "rgba(250, 255, 230, 0.04)", "source": "get_design_context" },
-      "border-top-width": { "value": "1px", "source": "get_design_context" },
-      "overflow": { "value": "hidden", "source": "get_design_context" },
-      "_rect": { "x": 284, "y": 90, "width": 365, "source": "get_metadata" }
+      "border-radius": {
+        "value": "16px",
+        "source": "get_design_context"
+      },
+      "overflow": {
+        "value": "hidden",
+        "source": "get_design_context"
+      },
+      "_rect": {
+        "x": 284,
+        "y": 90,
+        "width": 365,
+        "source": "get_metadata"
+      },
+      "_note": "Figma states a 1px stroke. The app renders it as outline with outline-offset:-1px rather than a border \u2014 visually equivalent and arguably better, since a border would inset the image. Asserted on the property the app actually uses.",
+      "outline-width": {
+        "value": "1px",
+        "source": "get_design_context"
+      },
+      "outline-color": {
+        "value": "rgba(250, 255, 230, 0.04)",
+        "source": "get_design_context"
+      }
+    },
+    ".sb": {
+      "_node": "5181:39",
+      "_name": "Sidebar Container",
+      "_note": "Spec supplied by Mike 2026-07-28: #F6F3F3 at 1% over the global #080808 background, with a #FAFFE6 6% stroke.",
+      "background-color": {
+        "value": "rgba(246, 243, 243, 0.01)",
+        "source": "design spec"
+      },
+      "_effectiveBackground": {
+        "value": "#0a0a0a",
+        "source": "design spec + ink/500",
+        "method": "painted",
+        "_why": "Translucent fill: Chromium's blend does not match arithmetic compositing, and only the painted value can match what the colour sampler sees."
+      },
+      "_rect": {
+        "x": 0,
+        "y": 0,
+        "width": 264,
+        "height": 792,
+        "source": "get_metadata"
+      }
+    },
+    ".content": {
+      "_node": "5181:38",
+      "_name": "frame background (canvas)",
+      "_note": ".content is transparent; the canvas colour comes from an ancestor, so only the composited value is meaningful here.",
+      "_effectiveBackground": {
+        "value": "#080808",
+        "source": "get_variable_defs ink/500",
+        "method": "computed",
+        "_why": "The canvas is opaque so arithmetic compositing is exact; sampling would return a card, since .content is full of them."
+      }
+    },
+    ".sb-row.is-active .sb-count": {
+      "_node": "5181:50",
+      "_name": "number badge (active row)",
+      "_note": "Width/height deliberately not asserted: the box is sized by its text, so any font-metric difference reads as a geometry failure. Position, padding and type are asserted instead.",
+      "_skipped": {
+        "color": "get_design_context puts the label at acid/900 #0d1d00 with opacity 0.8 applied separately; the app bakes opacity 0.9 into the element, so the two are not directly comparable."
+      },
+      "background-color": {
+        "value": "#b9e900",
+        "source": "get_design_context"
+      },
+      "border-radius": {
+        "value": "4px",
+        "source": "get_design_context"
+      },
+      "padding": {
+        "value": "4px",
+        "source": "get_design_context"
+      },
+      "font-size": {
+        "value": "10px",
+        "source": "get_design_context (text node 5181:51)"
+      },
+      "font-weight": {
+        "value": "600",
+        "source": "get_design_context (text node 5181:51)"
+      },
+      "_rect": {
+        "x": 210,
+        "y": 77,
+        "source": "get_metadata"
+      }
     }
   }
 }

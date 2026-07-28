@@ -571,7 +571,14 @@ select {
 .content {
   flex: 1;
   overflow-y: auto;
-  padding: 0 20px 140px;
+  /* 20px above the grid: Figma places the cards frame at y=90 with the header
+     bar ending at 70. Without it the first card butts against the header. */
+  padding: 20px 20px 140px;
+  /* Reserve that padding for scrollIntoView. Gallery.jsx:59 scrolls the focused
+     card into view with block:'nearest' when the drawer opens; without this it
+     treats the padding as slack and scrolls it away, so opening a drawer on a
+     top-row card jumped the grid up by exactly 20px. */
+  scroll-padding-top: 20px;
   scrollbar-width: thin;
   scrollbar-color: rgba(250, 255, 230, 0.08) transparent;
 }

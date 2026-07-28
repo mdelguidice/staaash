@@ -143,6 +143,10 @@ export const STABILISE_CSS = `
      nothing, so :hover can never apply — and the Figma reference shows no
      hovered card either. Injected after the route steps, so clicks still work. */
   * { pointer-events: none !important; }
+  /* Gallery.jsx scrolls the focused card into view with behavior:'smooth'
+     (line 59). A smooth scroll is not a transition, so freezing transitions
+     does not stop it, and a capture taken mid-scroll is stable but wrong. */
+  * { scroll-behavior: auto !important; }
   *, *::before, *::after {
     animation-duration: 0s !important;
     animation-delay: 0s !important;
@@ -161,6 +165,28 @@ export async function runSteps(page, steps = []) {
     } else if (step.key) await page.keyboard.press(step.key)
     else if (step.eval) await page.evaluate(step.eval)
     else if (step.wait) await page.waitForTimeout(step.wait)
+    else if (step.waitStable) {
+      // Wait for an element to stop moving, rather than sleeping a guessed
+      // number of milliseconds. This matters for animated surfaces: the
+      // stabilise pass freezes transitions, so a sheet caught mid-rise becomes
+      // permanently and *stably* wrong — stableScreenshot will happily agree
+      // with itself about the wrong frame. Under load a fixed sleep is not
+      // enough, which showed up as a one-off 188k-pixel capture disagreement.
+      const sel = step.waitStable
+      let last = null, same = 0
+      for (let i = 0; i < 60 && same < 3; i++) {
+        const box = await page.evaluate((s2) => {
+          const el = document.querySelector(s2)
+          if (!el) return null
+          const b = el.getBoundingClientRect()
+          return `${b.x.toFixed(2)},${b.y.toFixed(2)},${b.width.toFixed(2)},${b.height.toFixed(2)}`
+        }, sel)
+        same = box !== null && box === last ? same + 1 : 0
+        last = box
+        if (same < 3) await page.waitForTimeout(100)
+      }
+      if (same < 3) die(`waitStable: ${sel} never stopped moving`)
+    }
     else die(`Unknown route step: ${JSON.stringify(step)}`)
   }
 }
@@ -353,6 +379,42 @@ export async function stableScreenshot(page, { gap = 500, tries = 25, streak = 3
     prev = next
   }
   return { png: prev, settledAfter: null }
+}
+
+/**
+ * The most common flat colour inside a rect, from one image.
+ *
+ * Used for `_effectiveBackground`: computing a composite in JS does not
+ * reproduce Chromium's blending exactly (a 2% white over #080808 composites to
+ * #0d0d0d by arithmetic but paints #0c0c0c), so the audit reads the painted
+ * pixel instead of modelling it. That also makes the value identical to what
+ * the colour sampler sees, which is what lets a finding reach `confirmed`.
+ */
+export function modalFlatColor(data, W, H, rect, scale, { step = 4, radius = 2 } = {}) {
+  const x0 = Math.max(radius, Math.round(rect.x * scale))
+  const y0 = Math.max(radius, Math.round(rect.y * scale))
+  const x1 = Math.min(W - radius, Math.round((rect.x + rect.width) * scale))
+  const y1 = Math.min(H - radius, Math.round((rect.y + rect.height) * scale))
+  const tally = new Map()
+  for (let y = y0; y < y1; y += step) {
+    for (let x = x0; x < x1; x += step) {
+      const at = ((y * W) + x) * 4
+      const r = data[at], g = data[at + 1], b = data[at + 2]
+      let flat = true
+      for (let dy = -radius; dy <= radius && flat; dy++) {
+        for (let dx = -radius; dx <= radius; dx++) {
+          const i = (((y + dy) * W) + (x + dx)) * 4
+          if (data[i] !== r || data[i + 1] !== g || data[i + 2] !== b) { flat = false; break }
+        }
+      }
+      if (!flat) continue
+      const key = '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('')
+      tally.set(key, (tally.get(key) || 0) + 1)
+    }
+  }
+  let best = null, bestN = 0
+  for (const [k, n] of tally) if (n > bestN) { best = k; bestN = n }
+  return best ? { hex: best, samples: bestN } : null
 }
 
 // ─── image helpers ───────────────────────────────────────────────────────────

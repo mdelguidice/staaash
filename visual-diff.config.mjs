@@ -68,6 +68,14 @@ export default {
       // the window is pinned to this so width matches the design 1:1.
       frame: { width: 1440, height: 792 },
 
+      // Carried into report.json alongside the whole-screen delta. The same
+      // blindness applies to it: most of the frame is gallery, and gallery
+      // artwork is cropped from the reference at app-measured rects.
+      deltaCaveat:
+        'Whole-screen delta is blind to card placement — fixture artwork is ' +
+        'cropped from the reference at app-measured rects, so cards align by ' +
+        'construction wherever they sit. Use the style audit for placement.',
+
       route: {
         description: 'Library → Everything, gallery layout. The app launches in ' +
           'this state (App.jsx:45 default), so the click is a redundant but ' +
@@ -99,9 +107,17 @@ export default {
         { name: 'sidebar', x: 0, y: 0, width: 264, height: 792 },
         { name: 'topbar', x: 264, y: 0, width: 1176, height: 70 },
         { name: 'ask-bar', x: 264, y: 728, width: 1176, height: 48 },
-        // The card grid: .content from y=70 down to where .ask-wrap starts at
-        // y=728, so the ask bar is not counted twice.
-        { name: 'gallery', x: 264, y: 70, width: 1176, height: 658 }
+        // The card grid. Renamed from `gallery` because the score here is blind
+        // to where cards actually sit: fixture artwork is cropped out of the
+        // reference AT APP-MEASURED RECTS, so the images align by construction
+        // no matter how the grid is positioned. A 20px vertical offset of the
+        // whole grid scored 0.00% in this region while it was live. Card
+        // placement is only caught by the style audit, which reads the DOM.
+        {
+          name: 'gallery-placement-blind',
+          x: 264, y: 70, width: 1176, height: 658,
+          caveat: 'cannot detect card misplacement — see comment in config'
+        }
       ]
     },
 
@@ -148,9 +164,18 @@ export default {
           { waitFor: '.masonry' },
           { click: '.masonry-item:nth-child(1) .card' },
           { waitFor: '.drawer.is-open' },
-          // The sheet rises with a 480ms expo transition; let it land before
-          // the stabilise pass freezes transitions mid-flight.
-          { wait: 900 }
+          // The sheet rises with a 480ms expo transition. Wait for it to stop
+          // moving rather than sleeping a guess: the stabilise pass freezes
+          // transitions, so a sheet caught mid-rise becomes permanently and
+          // stably wrong, and the capture check would agree with itself about
+          // the wrong frame. A fixed 900ms sleep flaked once under load.
+          { waitStable: '.drawer' },
+          // Clicking a card also sets focusedIndex, which triggers a SMOOTH
+          // scrollIntoView in Gallery.jsx:59. That scroll is not a transition,
+          // so the stabilise pass cannot freeze it, and a capture taken while
+          // it is still easing is perfectly stable but a few px off. Watching
+          // the scrolling content catches it; watching .drawer alone did not.
+          { waitStable: '.masonry' }
         ]
       },
 

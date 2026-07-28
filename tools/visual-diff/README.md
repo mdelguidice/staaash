@@ -65,6 +65,21 @@ screens, and exits non-zero.
 `--single-capture` opts out when you want speed over certainty. `--calibrate`
 remains the explicit gate — it additionally names *what* moved.
 
+On disagreement both frames and the mask are written
+(`<id>.capture-a.png`, `.capture-b.png`, `.capture-diff.png`). That matters:
+this path has caught a flake that `--calibrate` never reproduced, so without the
+artifacts the failure would not have been diagnosable.
+
+### Region scores can be blind
+
+A region only measures pixels. Because fixture card artwork is cropped from the
+reference **at app-measured rects**, images align by construction wherever the
+cards sit — so the gallery region cannot see card misplacement at all. A 20px
+offset of the entire grid scored 0.00% there. It is named
+`gallery-placement-blind` for that reason, and both it and the whole-screen
+delta carry a `caveat` in `report.json`. Placement is caught by the style audit,
+which reads the DOM.
+
 ## Exact colour check
 
 pixelmatch cannot see a flat-colour drift below ~27/255 (see Sensitivity). That
@@ -86,6 +101,10 @@ scored against the DOM-reading style audit:
 | `confirmed` | a style finding on a colour property with the same two values |
 | `corroborated` | a style finding whose element overlaps **where this pair was sampled** |
 | `lead` | nothing independent supports it — not reported as a finding |
+
+`confirmed` needs the two checks to agree on a *value*, which for a translucent
+fill means the audit must know what the element actually paints, not what it
+declares. `_effectiveBackground` supplies that (see below).
 
 Overlap is tested against the pair's own sampled bounding box, not the whole
 region, so one style finding cannot vouch for a colour difference elsewhere in
@@ -174,6 +193,30 @@ Each assertion records which Figma source it came from:
 
 Colours compare channel-for-channel including alpha, lengths as normalised
 strings, rects (x/y/width/height) to within half a pixel.
+
+### `_effectiveBackground`
+
+`getComputedStyle` returns the *declared* colour, so a translucent fill reads as
+`rgba(246,243,243,0.01)` — nothing like the `#0a0a0a` it paints. Two methods:
+
+| method | how | use for |
+|---|---|---|
+| `computed` (default) | composite ancestors arithmetically | opaque surfaces |
+| `painted` | modal flat colour sampled from the capture | translucent fills |
+
+`painted` exists because arithmetic compositing does **not** reproduce
+Chromium's blending — 2% white over `#080808` computes to `#0d0d0d` but paints
+`#0c0c0c`. Only the painted value can match what the colour sampler sees, which
+is what makes `confirmed` reachable. It is only valid where an element's
+interior really is its own background: on a container full of cards the modal
+colour is a card, not the canvas.
+
+### Text-sized elements
+
+Do not assert width/height on anything sized by its own text — a font-metric
+difference of a fraction of a pixel then reads as a geometry failure. Assert
+position, padding and type instead. `.seg` and the count badge are set up this
+way.
 
 If a screen has no styles or variables file of its own, the `everything` one is
 borrowed and the report says so.

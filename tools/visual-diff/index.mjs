@@ -26,7 +26,7 @@ import { pathToFileURL } from 'node:url'
 import sharp from 'sharp'
 import {
   REPO, c, die, withApp, toRaw, scorePixels, cropRaw, panelSheet, resolveAppEnv,
-  stableScreenshot, sampleFlatColors
+  stableScreenshot, sampleFlatColors, modalFlatColor
 } from './lib.mjs'
 
 const argv = process.argv.slice(2)
@@ -234,6 +234,34 @@ async function collectStyles(page, selectors, varNames, extraProps = []) {
         if (!el) { elements[sel] = null; rects[sel] = null; continue }
         const cs = getComputedStyle(el)
         elements[sel] = Object.fromEntries(props.map((p) => [p, cs.getPropertyValue(p).trim()]))
+
+        // Composited background: walk up compositing background-color until an
+        // opaque layer is reached. getComputedStyle returns the *declared*
+        // colour, so a translucent fill like the sidebar reads as
+        // rgba(246,243,243,0.01) — nothing like the #0a0a0a it actually paints.
+        // The colour sampler sees the painted result, so without this the two
+        // checks can never agree on a value and `confirmed` is unreachable.
+        const parse = (v) => {
+          const m = /^rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/.exec(v || '')
+          return m ? [+m[1], +m[2], +m[3], m[4] === undefined ? 1 : parseFloat(m[4])] : null
+        }
+        const layers = []
+        for (let n = el; n; n = n.parentElement) {
+          const p = parse(getComputedStyle(n).backgroundColor)
+          if (!p || p[3] === 0) continue
+          layers.push(p)
+          if (p[3] >= 1) break
+        }
+        let out = layers.length && layers[layers.length - 1][3] >= 1
+          ? layers.pop().slice(0, 3)
+          : [0, 0, 0]
+        while (layers.length) {
+          const f = layers.pop()
+          out = [0, 1, 2].map((i) => f[i] * f[3] + out[i] * (1 - f[3]))
+        }
+        elements[sel]._effectiveBackground =
+          '#' + out.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('')
+
         const b = el.getBoundingClientRect()
         rects[sel] = {
           x: +b.x.toFixed(2), y: +b.y.toFixed(2),
@@ -257,7 +285,7 @@ async function collectStyles(page, selectors, varNames, extraProps = []) {
  * Colours are compared channel-for-channel including alpha; lengths as
  * normalised strings; rects to within half a pixel.
  */
-function auditStyles(styles, spec) {
+function auditStyles(styles, spec, paintedBg = null) {
   const findings = []
   const skipped = []
   for (const [sel, want] of Object.entries(spec.selectors || {})) {
@@ -271,6 +299,31 @@ function auditStyles(styles, spec) {
         selector: sel, property: '(element)', expected: 'present', actual: 'not found', source: null
       })
       continue
+    }
+
+    if (want._effectiveBackground) {
+      const decl = want._effectiveBackground
+      const expected = typeof decl === 'object' ? decl.value : decl
+      // method: 'painted' reads the modal flat colour actually rendered inside
+      // the element — required for translucent fills, because Chromium's
+      // blending does not match arithmetic compositing (2% white over #080808
+      // computes to #0d0d0d but paints #0c0c0c) and only the painted value can
+      // match what the colour sampler sees. Only valid where the element's
+      // interior really is its own background; on a container full of cards the
+      // modal colour is a card, not the canvas. Default is 'computed'.
+      const method = (typeof decl === 'object' && decl.method) || 'computed'
+      const actual = method === 'painted'
+        ? (paintedBg ? paintedBg(sel) : null) || got._effectiveBackground
+        : got._effectiveBackground
+      if (normHex(expected) !== normHex(actual)) {
+        findings.push({
+          selector: sel, property: 'effective background',
+          expected, actual,
+          source: typeof decl === 'object' ? decl.source : null,
+          isColour: true,
+          expectedHex: normHex(expected), actualHex: normHex(actual)
+        })
+      }
     }
 
     for (const [prop, decl] of Object.entries(want)) {
@@ -503,7 +556,8 @@ function scoreRegions(aData, bData, screen, W, H, scale, defaults) {
     )
     out.push({
       name: r.name, diffPixels: s.mismatched, totalPixels: s.total,
-      diffPercent: +s.percent.toFixed(3)
+      diffPercent: +s.percent.toFixed(3),
+      ...(r.caveat ? { caveat: r.caveat } : {})
     })
   }
   return out
@@ -745,6 +799,21 @@ async function main() {
         diffPixels = scorePixels(ra.data, rb.data, W, H, cfg.defaults).mismatched
       }
       agreement = { captures: 2, identical, diffPixels }
+      if (!identical) {
+        // Keep both frames and the mask. Refusing to report without saving
+        // anything makes the failure undiagnosable — and this path flakes where
+        // --calibrate does not, so it cannot be reproduced through that.
+        const ra = await toRaw(capA.png, W, H)
+        const rb = await toRaw(capB.png, W, H)
+        const { diff: mask } = scorePixels(ra.data, rb.data, W, H, cfg.defaults, { diffMask: true })
+        await writeFile(join(OUT_DIR, `${screen.id}.capture-a.png`), capA.png)
+        await writeFile(join(OUT_DIR, `${screen.id}.capture-b.png`), capB.png)
+        await writeFile(
+          join(OUT_DIR, `${screen.id}.capture-diff.png`),
+          await sharp(mask, { raw: { width: W, height: H, channels: 4 } }).png().toBuffer()
+        )
+        agreement.artifacts = [`${screen.id}.capture-a.png`, `${screen.id}.capture-b.png`, `${screen.id}.capture-diff.png`]
+      }
       process.stdout.write(
         `    capture  ${identical ? c.green('2/2 identical') : c.red(`2 captures DISAGREE (${diffPixels.toLocaleString()} px)`)}\n`
       )
@@ -776,8 +845,14 @@ async function main() {
 
     // ── computed style vs Figma layer properties ─────────────────────────────
     // Runs before the colour check, which is gated on it.
+    const appRaw = await toRaw(shotPng, W, H)
+    const paintedBg = (sel) => {
+      const r = capA.styles.rects[sel]
+      if (!r || r.width <= 0 || r.height <= 0) return null
+      return modalFlatColor(appRaw.data, W, H, r, scale)?.hex || null
+    }
     let styleAudit = null
-    if (styleSpec) styleAudit = auditStyles(capA.styles, styleSpec)
+    if (styleSpec) styleAudit = auditStyles(capA.styles, styleSpec, paintedBg)
     const styleFindings = styleAudit?.findings ?? []
 
     // ── pixel delta (only possible with a reference) ─────────────────────────
@@ -790,7 +865,7 @@ async function main() {
     if (ref) {
       const figmaPng = await readFile(ref.path)
       const a = await toRaw(figmaPng, W, H)
-      const b = await toRaw(shotPng, W, H)
+      const b = appRaw
       if (a.resampled) console.warn(c.yellow(`    ! figma ref was ${a.from}, resampled to ${W}×${H}`))
       if (b.resampled) console.warn(c.yellow(`    ! app shot was ${b.from}, resampled to ${W}×${H}`))
       resampled = {
@@ -852,9 +927,15 @@ async function main() {
         `    delta    ${tint(`${percent.toFixed(2)}%`)} ` +
           `${c.dim(`(${mismatched.toLocaleString()} / ${total.toLocaleString()} px)`)}\n`
       )
+      if (screen.deltaCaveat) {
+        process.stdout.write(`             ${c.dim('! blind to card placement — see report.json')}\n`)
+      }
       for (const r of regions) {
         const t = r.diffPercent < 2 ? c.green : r.diffPercent < 10 ? c.yellow : c.red
-        process.stdout.write(`      ${r.name.padEnd(10)} ${t(`${r.diffPercent.toFixed(2)}%`)}\n`)
+        process.stdout.write(
+          `      ${r.name.padEnd(22)} ${t(`${r.diffPercent.toFixed(2)}%`)}` +
+            `${r.caveat ? c.dim(`  ${r.caveat}`) : ''}\n`
+        )
       }
       for (const cc of colourCheck) {
         const head = `${cc.exactSamples.toLocaleString()}/${cc.flatSamples.toLocaleString()} exact`
@@ -941,6 +1022,7 @@ async function main() {
       diffPixels: mismatched,
       totalPixels: total,
       diffPercent: percent === null ? null : +percent.toFixed(3),
+      ...(screen.deltaCaveat ? { deltaCaveat: screen.deltaCaveat } : {}),
       regions,
       colourCheck,
       tokenAudit,
