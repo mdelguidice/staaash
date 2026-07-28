@@ -259,36 +259,92 @@ async function collectStyles(page, selectors, varNames, extraProps = []) {
  */
 function auditStyles(styles, spec) {
   const findings = []
+  const skipped = []
   for (const [sel, want] of Object.entries(spec.selectors || {})) {
+    for (const [prop, why] of Object.entries(want._skipped || {})) {
+      skipped.push({ selector: sel, property: prop, reason: why })
+    }
+
     const got = styles.elements[sel]
     if (!got) {
-      findings.push({ selector: sel, property: '(element)', expected: 'present', actual: 'not found' })
+      findings.push({
+        selector: sel, property: '(element)', expected: 'present', actual: 'not found', source: null
+      })
       continue
     }
-    for (const [prop, expected] of Object.entries(want)) {
+
+    for (const [prop, decl] of Object.entries(want)) {
       if (prop.startsWith('_')) continue
+      const expected = typeof decl === 'object' && decl !== null ? decl.value : decl
+      const source = typeof decl === 'object' && decl !== null ? decl.source : null
       const actual = got[prop]
       if (actual === undefined) continue
       const ea = parseRgba(expected), aa = parseRgba(actual)
       const same = ea && aa
         ? ea.slice(0, 3).every((v, i) => v === aa[i]) && Math.abs(ea[3] - aa[3]) < 0.0005
         : String(expected).replace(/\s+/g, ' ').trim() === String(actual).replace(/\s+/g, ' ').trim()
-      if (!same) findings.push({ selector: sel, property: prop, expected, actual })
+      if (!same) {
+        findings.push({
+          selector: sel, property: prop, expected, actual, source,
+          isColour: !!(ea && aa),
+          expectedHex: ea ? normHex(expected) : null,
+          actualHex: aa ? normHex(actual) : null
+        })
+      }
     }
+
     if (want._rect) {
       const r = styles.rects[sel]
-      for (const dim of ['width', 'height']) {
+      for (const dim of ['x', 'y', 'width', 'height']) {
         if (want._rect[dim] == null || !r) continue
         if (Math.abs(r[dim] - want._rect[dim]) > 0.5) {
           findings.push({
             selector: sel, property: dim,
-            expected: `${want._rect[dim]}px`, actual: `${r[dim]}px`
+            expected: `${want._rect[dim]}px`, actual: `${r[dim]}px`,
+            source: want._rect.source || 'get_metadata', isColour: false
           })
         }
       }
     }
   }
-  return findings
+  return { findings, skipped }
+}
+
+/**
+ * Decide whether a colour-check finding is independently supported.
+ *
+ * The flat-colour sampler cannot tell "same element, wrong colour" from
+ * "different element, similar colour" — it only sees pixels. So a finding is
+ * only reported once the style audit, which reads the DOM, agrees something is
+ * actually wrong there. Everything else is a lead, not a finding.
+ *
+ *   confirmed    a style finding on a colour property with the same two values
+ *   corroborated a style finding on an element overlapping this region
+ *   lead         nothing independent supports it
+ */
+function corroborate(pair, region, styleFindings, rects) {
+  const exact = styleFindings.find(
+    (f) => f.isColour && f.expectedHex === pair.figma && f.actualHex === pair.app
+  )
+  if (exact) {
+    return { level: 'confirmed', by: `${exact.selector} ${exact.property}` }
+  }
+  // Overlap is tested against where this colour pair was actually sampled, not
+  // the whole region — otherwise one style finding vouches for every colour
+  // difference anywhere near it, which is not corroboration.
+  const b = pair.box
+  const overlapping = b && styleFindings.find((f) => {
+    const r = rects[f.selector]
+    if (!r) return false
+    return (
+      r.x < b.x1 && r.x + r.width > b.x0 &&
+      r.y < b.y1 && r.y + r.height > b.y0
+    )
+  })
+  if (overlapping) {
+    return { level: 'corroborated', by: `${overlapping.selector} ${overlapping.property}` }
+  }
+  return { level: 'lead', by: null }
 }
 
 const rgbOf = (h) => {
@@ -325,9 +381,16 @@ function resolveExpected(spec, figmaVars) {
       if (!bg) return { label: `over ${spec.over}`, error: `base token ${spec.over} not found` }
       const mixed = fg.map((f, i) => Math.round(f * spec.alpha + bg[i] * (1 - spec.alpha)))
       const hex = '#' + mixed.map((v) => v.toString(16).padStart(2, '0')).join('')
+      // Two implementations are equally correct: pre-flattened to the composite
+      // hex, or declared layered and composited by the browser. Accept both —
+      // insisting on the flattened form would flag the layered one, which is
+      // the better implementation because it survives a canvas change.
       return {
         label: `${spec.color} @${spec.alpha * 100}% over ${spec.over}`,
-        hex, raw: hex, composite: true
+        hex,
+        alsoAccept: [...fg, spec.alpha],
+        raw: `${hex} (or rgba(${fg.join(', ')}, ${spec.alpha}) layered)`,
+        composite: true
       }
     }
     return {
@@ -381,7 +444,16 @@ function auditTokens(styles, figmaVars, tokenMap) {
     } else if (!want.hex) entry.reason = 'figma token not found'
     else {
       const appHex = normHex(appRaw)
-      if (!appHex) entry.reason = 'app value is not a comparable colour'
+      const appRgba = parseRgba(appRaw)
+      // A layered declaration (alpha < 1) is checked against the fill+alpha the
+      // spec names; an opaque one against the composited result.
+      if (want.alsoAccept && appRgba && appRgba[3] < 1) {
+        entry.match =
+          appRgba.slice(0, 3).every((v, i) => v === want.alsoAccept[i]) &&
+          Math.abs(appRgba[3] - want.alsoAccept[3]) < 0.0005
+        entry.layered = true
+        if (!entry.match) entry.reason = 'layered value differs'
+      } else if (!appHex) entry.reason = 'app value is not a comparable colour'
       else {
         entry.match = appHex === want.hex
         if (!entry.match) {
@@ -702,6 +774,12 @@ async function main() {
       console.warn(c.yellow('    ! page never stopped repainting'))
     }
 
+    // ── computed style vs Figma layer properties ─────────────────────────────
+    // Runs before the colour check, which is gated on it.
+    let styleAudit = null
+    if (styleSpec) styleAudit = auditStyles(capA.styles, styleSpec)
+    const styleFindings = styleAudit?.findings ?? []
+
     // ── pixel delta (only possible with a reference) ─────────────────────────
     let percent = null, mismatched = null, total = null
     let regions = []
@@ -726,22 +804,23 @@ async function main() {
 
       // Exact colour comparison, independent of pixelmatch's threshold.
       //
-      // Split by magnitude. A small delta on a flat fill is a genuine colour
-      // drift — and below ~27/255 pixelmatch structurally cannot see it, which
-      // is the whole reason this check exists. A large delta means the two
-      // images simply have different things at that point (a card edge landing
-      // elsewhere), which the pixel delta already reports; counting those as
-      // "colour" findings would bury the signal.
-      const DRIFT_MAX = 8
+      // Gated on the style audit. The sampler only sees pixels, so it cannot
+      // tell "same element, wrong colour" from "different element, similar
+      // colour" — magnitude was a poor proxy for that and is gone. A pair is
+      // only a finding once the DOM-reading style audit independently agrees
+      // something is wrong there; everything else is a lead.
       for (const r of screen.regions || []) {
         const s = sampleFlatColors(a.data, b.data, W, H, r, scale)
-        const nonZero = s.pairs.filter((p) => p.maxDelta > 0)
+        const scored = s.pairs
+          .filter((p) => p.maxDelta > 0)
+          .map((p) => ({ ...p, ...corroborate(p, r, styleFindings, capA.styles.rects) }))
         colourCheck.push({
           name: r.name,
           flatSamples: s.flatPoints,
           exactSamples: s.exactMatches,
-          drift: nonZero.filter((p) => p.maxDelta <= DRIFT_MAX).slice(0, 8),
-          structuralPairs: nonZero.filter((p) => p.maxDelta > DRIFT_MAX).length
+          findings: scored.filter((p) => p.level !== 'lead').slice(0, 8),
+          leads: scored.filter((p) => p.level === 'lead').slice(0, 8),
+          leadCount: scored.filter((p) => p.level === 'lead').length
         })
       }
 
@@ -779,18 +858,19 @@ async function main() {
       }
       for (const cc of colourCheck) {
         const head = `${cc.exactSamples.toLocaleString()}/${cc.flatSamples.toLocaleString()} exact`
-        const drift = cc.drift.length
-          ? c.red(
-              '  drift ' +
-                cc.drift.slice(0, 3).map((d) => `${d.figma}→${d.app} Δ${d.maxDelta}(×${d.samples})`).join(' ')
-            )
-          : c.green('  no drift')
-        const struct = cc.structuralPairs
-          ? c.dim(`  · ${cc.structuralPairs} structural`)
-          : ''
+        const verdict = cc.findings.length
+          ? c.red(`  ${cc.findings.length} finding(s)`)
+          : c.green('  no findings')
+        const leads = cc.leadCount ? c.dim(`  · ${cc.leadCount} lead(s)`) : ''
         process.stdout.write(
-          `      ${c.dim('colour')} ${cc.name.padEnd(9)} ${c.dim(head)}${drift}${struct}\n`
+          `      ${c.dim('colour')} ${cc.name.padEnd(9)} ${c.dim(head)}${verdict}${leads}\n`
         )
+        for (const f of cc.findings.slice(0, 3)) {
+          process.stdout.write(
+            `        ${c.red('✗')} ${f.figma}→${f.app} Δ${f.maxDelta} ×${f.samples}  ` +
+              `${c.dim(`${f.level} by ${f.by}`)}\n`
+          )
+        }
       }
     } else {
       await writeFile(join(OUT_DIR, `${screen.id}.app.png`), shotPng)
@@ -828,19 +908,17 @@ async function main() {
       }
     }
 
-    // ── computed style vs Figma layer properties ─────────────────────────────
-    let styleAudit = null
-    if (styleSpec) {
-      styleAudit = auditStyles(capA.styles, styleSpec)
-      const n = styleAudit.length
+    if (styleAudit) {
+      const n = styleFindings.length
       process.stdout.write(
         `    styles   ${n === 0 ? c.green('all match') : c.red(`${n} mismatched`)}` +
-          `${c.dim(`  · ${Object.keys(styleSpec.selectors || {}).length} selector(s) from ${relative(REPO, stylePath)}`)}\n`
+          `${c.dim(`  · ${Object.keys(styleSpec.selectors || {}).length} selector(s), ${styleAudit.skipped.length} property(s) skipped`)}\n`
       )
-      for (const f of styleAudit.slice(0, 10)) {
+      for (const f of styleFindings.slice(0, 14)) {
         process.stdout.write(
           `      ${c.red('✗')} ${f.selector} ${c.dim(f.property)}  ` +
-            `figma ${f.expected}  ${c.dim('app')} ${f.actual}\n`
+            `figma ${f.expected}  ${c.dim('app')} ${f.actual}` +
+            `${f.source ? c.dim(`  [${f.source}]`) : ''}\n`
         )
       }
     }

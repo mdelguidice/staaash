@@ -1,24 +1,82 @@
 {
-  "_source": "Figma MCP get_design_context + get_metadata, file yPHeCTtyigj5XqiReFv8NW",
-  "_refresh": "Call get_design_context on the node (properties) and get_metadata (rect), then update the entry.",
-  "_note": "Only assert what the Figma output states outright. Padding is deliberately omitted for .ask: get_design_context's generated Tailwind says py-14px while the metadata places the chip 12px from the frame top, and the two cannot both be right. Guessing between them would manufacture a finding.",
+  "_source": "Figma file yPHeCTtyigj5XqiReFv8NW, node 5181-38",
+  "_refresh": "Properties: get_design_context on the node. Geometry: get_metadata (coords are absolute within the 1440x792 frame — sum the parent offsets).",
+  "_sources": {
+    "get_design_context": "generated React/Tailwind — fills, borders, radii, padding, type",
+    "get_metadata": "XML geometry — x, y, width, height only"
+  },
+  "_rule": "Assert only what a source states outright. Where the two sources disagree, skip the property and record why in _skipped rather than picking one.",
+
   "selectors": {
     ".ask": {
       "_node": "5181:540",
       "_name": "search",
-      "background-color": "rgba(32, 30, 30, 0.92)",
-      "border-radius": "16px",
-      "box-shadow": "rgba(3, 3, 3, 0.2) 0px 4px 8px 0px",
-      "border-top-color": "rgba(250, 255, 230, 0.04)",
-      "_rect": { "width": 692, "height": 48 }
+      "_skipped": {
+        "padding": "get_design_context generates py-[14px]; get_metadata places the chip 12px from the frame top. Both cannot hold, so neither is asserted."
+      },
+      "background-color": { "value": "rgba(32, 30, 30, 0.92)", "source": "get_design_context" },
+      "border-radius": { "value": "16px", "source": "get_design_context" },
+      "box-shadow": { "value": "rgba(3, 3, 3, 0.2) 0px 4px 8px 0px", "source": "get_design_context" },
+      "border-top-color": { "value": "rgba(250, 255, 230, 0.04)", "source": "get_design_context" },
+      "border-top-width": { "value": "1px", "source": "get_design_context" },
+      "_rect": { "x": 506, "y": 728, "width": 692, "height": 48, "source": "get_metadata" }
     },
+
     ".ask-chip": {
       "_node": "5181:541",
       "_name": "ai",
-      "background-color": "rgba(79, 107, 237, 0.2)",
-      "border-radius": "6px",
-      "border-top-color": "rgba(79, 107, 237, 0.1)",
-      "_rect": { "width": 101, "height": 24 }
+      "background-color": { "value": "rgba(79, 107, 237, 0.2)", "source": "get_design_context" },
+      "border-radius": { "value": "6px", "source": "get_design_context" },
+      "border-top-color": { "value": "rgba(79, 107, 237, 0.1)", "source": "get_design_context" },
+      "_rect": { "x": 518, "y": 740, "width": 101, "height": 24, "source": "get_metadata" }
+    },
+
+    ".sb-row.is-active": {
+      "_node": "5181:45",
+      "_name": "Category Item (Everything, active)",
+      "background-color": { "value": "#ccff00", "source": "get_design_context" },
+      "border-radius": { "value": "8px", "source": "get_design_context" },
+      "padding": { "value": "8px", "source": "get_design_context" },
+      "gap": { "value": "8px", "source": "get_design_context" },
+      "_rect": { "x": 20, "y": 70, "width": 224, "height": 32, "source": "get_metadata" }
+    },
+
+    ".sb-count": {
+      "_node": "5181:50",
+      "_name": "number badge",
+      "_skipped": {
+        "color": "get_design_context puts the label at acid/900 #0d1d00 with opacity 0.8; the app applies no opacity, so the computed colour is not comparable without knowing whether the design intends the opacity to be baked in."
+      },
+      "background-color": { "value": "#b9e900", "source": "get_design_context" },
+      "border-radius": { "value": "4px", "source": "get_design_context" },
+      "padding": { "value": "4px", "source": "get_design_context" },
+      "_rect": { "x": 210, "y": 77, "width": 26, "height": 18, "source": "get_metadata" }
+    },
+
+    ".seg": {
+      "_node": "5181:213",
+      "_name": "view-mode",
+      "background-color": { "value": "rgba(32, 30, 30, 0.64)", "source": "get_design_context" },
+      "border-radius": { "value": "10px", "source": "get_design_context" },
+      "border-top-color": { "value": "#414141", "source": "get_design_context" },
+      "border-top-width": { "value": "1px", "source": "get_design_context" },
+      "padding": { "value": "4px", "source": "get_design_context" },
+      "gap": { "value": "4px", "source": "get_design_context" },
+      "_rect": { "x": 1216, "y": 19, "width": 98, "height": 32, "source": "get_metadata" }
+    },
+
+    ".card-media": {
+      "_node": "5181:233",
+      "_name": "Thumbnail (first card)",
+      "_skipped": {
+        "height": "get_metadata gives 195, implying aspect 1.872. That is not one of the app's CARD_ASPECTS buckets (format.js), so asserting it would test the fixture's bucket choice rather than the app. The x/y assertion still catches where the grid starts.",
+        "background-color": "The design fills the thumbnail with an image, so no background colour is stated; the app's --surface shows only where an image is missing."
+      },
+      "border-radius": { "value": "16px", "source": "get_design_context" },
+      "border-top-color": { "value": "rgba(250, 255, 230, 0.04)", "source": "get_design_context" },
+      "border-top-width": { "value": "1px", "source": "get_design_context" },
+      "overflow": { "value": "hidden", "source": "get_design_context" },
+      "_rect": { "x": 284, "y": 90, "width": 365, "source": "get_metadata" }
     }
   }
 }

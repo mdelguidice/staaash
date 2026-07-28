@@ -490,9 +490,17 @@ export function sampleFlatColors(aData, bData, W, H, region, scale, { step = 4, 
         figma: hex(...a),
         app: hex(...b),
         delta: [b[0] - a[0], b[1] - a[1], b[2] - a[2]],
-        samples: 0
+        samples: 0,
+        // Where this colour pair actually occurs, in CSS px. Corroboration
+        // tests against this rather than the whole region, so a style finding
+        // on one element cannot vouch for a colour difference somewhere else
+        // in the same region.
+        box: { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity }
       }
       e.samples++
+      const cx = x / scale, cy = y / scale
+      e.box.x0 = Math.min(e.box.x0, cx); e.box.y0 = Math.min(e.box.y0, cy)
+      e.box.x1 = Math.max(e.box.x1, cx); e.box.y1 = Math.max(e.box.y1, cy)
       pairs.set(key, e)
     }
   }

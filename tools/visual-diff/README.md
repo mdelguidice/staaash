@@ -73,21 +73,33 @@ directly and independently.
 
 For each region the harness walks a grid, keeps only points whose 5×5
 neighbourhood is a single uniform colour in **both** images — flat interior, no
-text or edges — and reports the exact RGB difference there. Findings are split
-by magnitude:
+text or edges — and reports the exact RGB difference there.
 
-- **drift** (Δ ≤ 8) — a genuine colour difference on a flat fill, almost always
-  invisible to the pixel delta. This is the signal.
-- **structural** (Δ > 8) — the two images simply have different content at that
-  point. The pixel delta already reports that; it is counted, not listed.
+**Nothing is reported as a finding unless the style audit corroborates it.** The
+sampler only sees pixels, so it cannot tell "same element, wrong colour" from
+"different element, similar colour". An earlier version split by magnitude
+(`DRIFT_MAX`), which was a poor proxy and is gone. Instead each colour pair is
+scored against the DOM-reading style audit:
+
+| Level | Meaning |
+|---|---|
+| `confirmed` | a style finding on a colour property with the same two values |
+| `corroborated` | a style finding whose element overlaps **where this pair was sampled** |
+| `lead` | nothing independent supports it — not reported as a finding |
+
+Overlap is tested against the pair's own sampled bounding box, not the whole
+region, so one style finding cannot vouch for a colour difference elsewhere in
+the same region.
 
 ```
-colour sidebar   783/44,281 exact   drift #0a0a0a→#0a0a09 Δ1(×42230)   · 20 structural
+colour ask-bar   89/4,749 exact   no findings   · 23 lead(s)
+colour gallery   119,560/120,763 exact   1 finding(s)
+  ✗ #ffffff→#080808 Δ247 ×419   corroborated by .card-media border-top-color
 ```
 
-That line is a real finding: the design paints the sidebar `#0a0a0a`, the app
-paints `#0a0a09`. It covers ~42k sampled points and scores **0.000%** in the
-pixel delta.
+The ask-bar line is the gate working: the sampler sees a Δ2 across most of the
+bar, but every `.ask` style assertion passes, so it is demoted to a lead rather
+than reported. Chasing it as a colour bug is exactly the mistake this prevents.
 
 ## Token audit
 
@@ -97,8 +109,7 @@ computed `:root` custom property is compared **exactly** against the Figma
 variable:
 
 ```
-tokens   7/7 exact   · 2 element colour(s) match no token
-  ? #0a0a09 on .sb background-color — no Figma token
+tokens   9/9 exact   · 10 element colour(s) match no token
   ? #201e1e on .ask background-color — no Figma token
 ```
 
@@ -107,21 +118,24 @@ A `tokenMap` entry takes three forms:
 | Form | Meaning |
 |---|---|
 | `'ink/500'` | a Figma variable, compared as hex |
-| `{ color, alpha, over: 'ink/500' }` | translucent fill composited over a base token, compared as the resulting flat hex |
+| `{ color, alpha, over: 'ink/500' }` | translucent fill over a base token — accepts **either** the composited flat hex or the layered `rgba()` declaration, since both are correct implementations |
 | `{ color, alpha }` | translucent value compared as rgba, channel for channel |
 
 The composite form exists because parts of the design are specified as a
 translucent fill over another token, so the colour they render exists nowhere as
 a variable. The sidebar is `#F6F3F3` at 1% over `#080808`, which composites to
-`(10.38, 10.35, 10.35)` → `#0a0a0a`. The app hardcodes `#0a0a09` — a
+`(10.38, 10.35, 10.35)` → `#0a0a0a`. The app used to hardcode `#0a0a09` — a
 hand-flattened approximation with the blue channel rounded down — and the audit
-now catches it:
+caught it:
 
 ```
-tokens   1 mismatched
-  ✗ --sidebar should be #F6F3F3 @1% over ink/500
-    app #0a0a09  expected #0a0a0a  Δ(0,0,-1)  (value differs)
+✗ --sidebar should be #F6F3F3 @1% over ink/500
+  app #0a0a09  expected #0a0a0a  Δ(0,0,-1)
 ```
+
+It now declares `rgba(246, 243, 243, 0.01)` and passes. Both the flattened and
+the layered form are accepted; the layered one is better because it survives a
+change to the canvas colour.
 
 Figma values come from `visual-diff/figma/<screen>.variables.json`; refresh with
 the Figma MCP `get_variable_defs` and paste into that file.
@@ -134,21 +148,38 @@ actually paints and how big it is — background, border, radius, shadow, box si
 `get_metadata`, committed to `visual-diff/figma/<screen>.styles.json`:
 
 ```
-styles   3 mismatched  · 2 selector(s) from visual-diff/figma/everything.styles.json
-  ✗ .ask height  figma 48px  app 46px
-  ✗ .ask-chip width  figma 101px  app 102.73px
-  ✗ .ask-chip height  figma 24px  app 26px
+styles   12 mismatched  · 6 selector(s), 4 property(s) skipped
+  ✗ .sb-row.is-active y  figma 70px  app 75px          [get_metadata]
+  ✗ .seg height          figma 32px  app 34px          [get_metadata]
+  ✗ .card-media border-top-width  figma 1px  app 0px   [get_design_context]
+  ✗ .card-media y        figma 90px  app 70px          [get_metadata]
+```
+
+Each assertion records which Figma source it came from:
+
+```json
+"background-color": { "value": "rgba(32, 30, 30, 0.92)", "source": "get_design_context" },
+"_rect": { "x": 506, "y": 728, "width": 692, "height": 48, "source": "get_metadata" }
+```
+
+`get_design_context` supplies properties (fills, borders, radii, padding, type);
+`get_metadata` supplies geometry only. Where the two disagree, the property is
+**skipped** and the reason recorded, rather than picking a winner:
+
+```json
+"_skipped": {
+  "padding": "get_design_context generates py-[14px]; get_metadata places the chip 12px from the frame top. Both cannot hold, so neither is asserted."
+}
 ```
 
 Colours compare channel-for-channel including alpha, lengths as normalised
-strings, rects to within half a pixel. Only assert what the Figma output states
-outright — where `get_design_context`'s generated Tailwind and `get_metadata`
-disagree (as they do on `.ask` padding), omit the property rather than pick one.
+strings, rects (x/y/width/height) to within half a pixel.
 
-This is what explained the ask-bar colour drift: every colour property matches,
-but the box is 2px short, so its translucent fill composites over different
-backdrop content. If a screen has no
-variables file the `everything` one is borrowed and the report says so.
+If a screen has no styles or variables file of its own, the `everything` one is
+borrowed and the report says so.
+
+This check is also what gates the colour findings above — see "Exact colour
+check".
 
 Colours painted by the probed elements that match **no** Figma token are listed
 too — those are hardcoded or drifted values. Fully transparent backgrounds are

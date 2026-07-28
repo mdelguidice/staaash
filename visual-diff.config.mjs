@@ -98,10 +98,10 @@ export default {
       regions: [
         { name: 'sidebar', x: 0, y: 0, width: 264, height: 792 },
         { name: 'topbar', x: 264, y: 0, width: 1176, height: 70 },
-        { name: 'ask-bar', x: 264, y: 730, width: 1176, height: 46 },
+        { name: 'ask-bar', x: 264, y: 728, width: 1176, height: 48 },
         // The card grid: .content from y=70 down to where .ask-wrap starts at
-        // y=730, so the ask bar is not counted twice.
-        { name: 'gallery', x: 264, y: 70, width: 1176, height: 660 }
+        // y=728, so the ask bar is not counted twice.
+        { name: 'gallery', x: 264, y: 70, width: 1176, height: 658 }
       ]
     },
 
