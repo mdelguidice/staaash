@@ -86,7 +86,9 @@ function runElectron(env) {
   return new Promise((res, rej) => {
     const child = spawn(electronBinary(appDir), [SEED_APP_DIR], {
       cwd: appDir,
-      env: { ...process.env, HOME: fixtureHome, STAAASH_VD_APPDATA: appData, STAAASH_VD_DESKTOP: appDir, ...env },
+      // HOME is deliberately left alone — redirecting it breaks the macOS
+      // keychain lookup and pops a dialog on every launch. See resolveAppEnv.
+      env: { ...process.env, STAAASH_VD_APPDATA: appData, STAAASH_VD_DESKTOP: appDir, ...env },
       stdio: ['ignore', 'pipe', 'pipe']
     })
     let stderr = ''

@@ -20,16 +20,17 @@ plus a config at the repo root.
 
 | Measure | Value |
 |---|---|
-| Whole-screen delta | **2.10%** (95,970 / 4,561,920 px) |
+| Whole-screen delta | **2.24%** (102,112 / 4,561,920 px) |
 | sidebar region | 3.44% |
 | topbar region | 1.81% |
-| ask-bar region | 1.71% |
-| `--calibrate` | passes ~4 runs in 5; residual 0.08% (3,621 px) |
-| Detection floor — geometry | ~0.5px shift; 1px unambiguous (read the region) |
+| ask-bar region | 1.73% |
+| gallery region | 2.05% |
+| `--calibrate` | **clean, 16/16 consecutive** |
+| Detection floor — geometry | 0.1px (124 px change); noise floor is zero |
 | Detection floor — flat colour | **27 of 255** — a hard cliff, nothing below |
 
-Trajectory: 44.48% (real library, no fixture) → 2.10% (seeded fixture, correct
-viewport). The early numbers were also captured at the **wrong viewport** — see
+Trajectory: 44.48% (real library, no fixture) → 2.24% (seeded fixture, correct
+viewport, reproducible). The early numbers were also captured at the **wrong viewport** — see
 "getContentSize lies" below.
 
 ## File inventory
@@ -115,7 +116,16 @@ Each was found empirically this session, usually after a failure.
    binary (leftover from a manual unpack). `electronBinary()` descends into
    `Contents/MacOS/Electron`.
 
-10. **Do not bump Electron.** Pinned `~42.1.0` = ABI 146, the newest with
+10. **Never pass a redirected `HOME` to the app.** macOS resolves the login
+    keychain through the home directory, so Chromium's OSCrypt (initialised by
+    every Electron app, `safeStorage` or not) fails to find one and pops a
+    modal: *"A keychain cannot be found to store 'staaash Key.'"* That dialog
+    steals focus at a nondeterministic moment and was the root cause of the
+    long-standing calibration residual. `app.env.HOME` is a naming convention
+    only; `resolveAppEnv()` strips it. The fixture is selected purely by the
+    shim's appData patch.
+
+11. **Do not bump Electron.** Pinned `~42.1.0` = ABI 146, the newest with
     `better-sqlite3` prebuilds. 43 (ABI 148) has none and source builds are
     blocked. npm needs `NPM_CONFIG_CACHE="$TMPDIR/npm-cache"` in this sandbox.
 
@@ -144,18 +154,16 @@ without touching app code.
 
 ## Known issues / unresolved
 
-- **`--calibrate` is not reliably 0.00% — passes ~4/5.** Residual is always
-  exactly 3,621 px (0.08%), always the same two states, visually identical when
-  magnified (antialiasing on glyph and image edges). It is **bistable, not a
-  timing race**: `streak=4/gap=700` scored *worse* (3/5) than the current
-  `streak=3/gap=500` (4/5), and 8 launches inside one process were
-  byte-identical while separate processes disagree. Leading hypothesis: cards
-  are 365.33 CSS px wide, so the 730px crops display at 730.67 and must be
-  resampled. **This was tested and disproven** — see README "Current status".
-  Ten calibrations at each of four widths (re-seeding per width) gave 14/20
-  clean at integral colW vs 13/20 fractional: no real difference. Root cause is
-  still open; timing, cold/warm profile, GPU raster, hover, tied sort order and
-  fractional column width are all ruled out.
+- **RESOLVED — `--calibrate` is now clean, 16/16.** The residual was the macOS
+  keychain dialog the harness itself caused by redirecting `HOME` (see
+  non-obvious item 10). It stole window focus at a varying moment and persisted
+  until dismissed, which explains every symptom: bistable rather than noisy,
+  immune to longer waits, identical within a process but divergent across
+  processes. Fixed by not passing `HOME`.
+
+  Recorded negative result, do not retry: fractional column width was the
+  leading hypothesis and is wrong. Ten calibrations at each of four widths
+  (re-seeding per width) gave 14/20 clean at integral colW vs 13/20 fractional.
 
 - **Fixture timestamps are relative to seed time.** `"2 days ago"` labels drift
   once the fixture ages past a boundary. Re-seed. No staleness warning is
@@ -188,11 +196,9 @@ None were fixed (no app changes allowed).
    (`waitFor`/`click`/`clickText`/`key`/`eval`/`wait`). The config has a
    commented template. Candidates: settings overlay, drawer open, list layout,
    empty/trash states.
-3. **Chase the 0.08%** only if a stricter gate is wanted. The integral-column-width
-   idea is already tested and dead — do not redo it. Untried angles: bisect by
-   removing card images entirely from the fixture (is it image raster or text
-   raster?), or capture via Electron's `capturePage()` instead of CDP to see
-   whether the capture path itself is implicated.
+3. **Calibration is clean, so `--calibrate` is usable as a CI gate** — it already
+   exits non-zero and names the offending elements. Any non-zero result is now a
+   real regression rather than noise.
 4. **Gitignore `visual-diff/` outputs and `fixtures/*/home/`** — currently
    untracked and would otherwise commit ~3MB of binaries per run. Deliberately
    not done, since touching `.gitignore` was not asked for.

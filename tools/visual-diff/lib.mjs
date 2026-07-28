@@ -4,6 +4,7 @@
  * images. Nothing here writes to app code or to the real user data directory.
  */
 import { existsSync, readFileSync, rmSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { join, dirname, resolve, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { _electron as electron } from 'playwright-core'
@@ -45,20 +46,59 @@ export function electronBinary(appDir) {
 /**
  * Work out where the app should read its database from.
  *
- * Setting `app.env.HOME` in the config selects a fixture. On macOS that alone
- * is not enough: Electron derives `appData` from NSHomeDirectory(), which
- * ignores $HOME, so the app would still open the real library. We therefore
- * also hand the shim an explicit appData path. HOME still matters — the app's
- * legacy-migration check reads process.env.HOME (src/main/migrate.js), so
- * redirecting it is what keeps migration a no-op inside a fixture.
+ * Setting `app.env.HOME` in the config selects a fixture. It is a naming
+ * convention only: the value is resolved to an appData path handed to the shim,
+ * and HOME itself is stripped before launch. Electron derives `appData` from
+ * NSHomeDirectory() on macOS, which ignores $HOME anyway, so setting it never
+ * moved the database — only the shim does that. See the note below for why
+ * passing it through is actively harmful.
  */
 export function resolveAppEnv(cfg, configDir) {
   const env = { ...(cfg.app?.env || {}) }
   if (!env.HOME) return { env, appData: null, fixtureHome: null }
 
   const home = resolve(configDir, env.HOME)
-  env.HOME = home
+
+  // HOME names the fixture, but is deliberately NOT handed to the process.
+  //
+  // macOS resolves the login keychain through the home directory, so a
+  // redirected HOME makes Chromium's profile encryption (OSCrypt, which every
+  // Electron app initialises whether or not it calls safeStorage) fail to find
+  // a keychain — popping a "A keychain cannot be found to store 'staaash Key.'"
+  // dialog on the user's screen on every single launch.
+  //
+  // It was originally redirected to stop the legacy migration finding
+  // ~/staaash/.cache/data.json and importing the real library into a fixture.
+  // That is unnecessary: the seeder sets `migrated_v1`, so the guard in
+  // src/main/migrate.js short-circuits before it looks at HOME at all.
+  // assertFixtureSafe() below enforces that rather than trusting it.
+  delete env.HOME
+
   return { env, appData: join(home, 'Library', 'Application Support'), fixtureHome: home }
+}
+
+/**
+ * Refuse to launch against a fixture whose `migrated_v1` flag is unset.
+ *
+ * Without it the app would run its one-time legacy migration and import the
+ * real library into the fixture — silently making every score meaningless.
+ * This is the precondition that lets us leave HOME alone (see above).
+ */
+export function assertFixtureSafe(dbPath) {
+  let out
+  try {
+    out = execFileSync('sqlite3', ['-readonly', dbPath, "SELECT value FROM settings WHERE key='migrated_v1'"],
+      { encoding: 'utf8' })
+  } catch {
+    return // no sqlite3, or unreadable — not worth blocking the run over
+  }
+  if (!out.trim()) {
+    die(
+      `Fixture at\n    ${dbPath}\n  has no migrated_v1 flag.\n\n` +
+        `  Launching it would run the legacy migration and pull your real\n` +
+        `  library into the fixture. Re-seed:  node tools/visual-diff/seed-fixture.mjs`
+    )
+  }
 }
 
 /**
@@ -158,7 +198,10 @@ export async function withApp({ cfg, screen, configDir, skipSteps = false, extra
   // Routing through the shim is what redirects the database. Without a fixture
   // configured we launch the app directly and it uses the real library.
   const useShim = !!appData
-  if (appData) resetVolatileState(join(appData, 'staaash'))
+  if (appData) {
+    assertFixtureSafe(join(appData, 'staaash', 'staaash.db'))
+    resetVolatileState(join(appData, 'staaash'))
+  }
   const app = await electron.launch({
     executablePath: electronBinary(appDir),
     // Pinning the scale factor makes the capture resolution host-independent,

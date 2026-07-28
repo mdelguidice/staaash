@@ -89,7 +89,10 @@ app: { dir: './desktop', env: { HOME: './tools/visual-diff/fixtures/figma-mock/h
 ```
 
 **Your real library at `~/Library/Application Support/staaash/` is never
-opened.** Set `env: {}` to run against it anyway — useful for eyeballing the
+opened.** Note that `HOME` here is a naming convention only — it is resolved to
+an appData path for the shim and then *stripped* before launch, because passing
+a redirected `HOME` breaks the macOS keychain lookup (see "Current status").
+Set `env: {}` to run against the real library anyway — useful for eyeballing the
 live app, but scores then drift every time you save a bookmark.
 
 ### Regenerating
@@ -130,9 +133,15 @@ The app hardcodes `userData` to `appData/staaash` (`src/main/index.js`). On
 macOS, Electron derives `appData` from `NSHomeDirectory()`, which **ignores
 `$HOME`** — so env alone cannot move the database. `electron-shim/` patches
 `app.getPath('appData')` and then imports the real main, which computes
-`userData` from it at module scope. Setting `HOME` still matters separately:
-the legacy-data migration reads `process.env.HOME` (`src/main/migrate.js`), so
-redirecting it is what keeps migration a no-op inside a fixture.
+`userData` from it at module scope. That shim is the entire mechanism.
+
+`HOME` is **not** passed through. It was, originally, to stop the legacy
+migration finding `~/staaash/.cache/data.json` and importing the real library
+into a fixture — but that is already prevented by the seeder setting
+`migrated_v1`, which makes `migrate.js:23` return before it ever reads `HOME`.
+Passing it caused the keychain dialog described above, so it is now stripped and
+`assertFixtureSafe()` checks the `migrated_v1` precondition directly instead:
+the harness refuses to launch a fixture without it.
 
 ## Calibration
 
@@ -155,19 +164,37 @@ captures are not reproducible. what changed:
 Differing pixels are mapped back through `elementFromPoint` to the elements
 under them, so you get *what* changed, not just how much.
 
-### Current status: not yet reliably 0.00%
+### Current status: clean — 16/16 consecutive
 
-**It passes roughly 4 runs in 5.** The residual failure is a consistent
-**0.08% (3,621 px)** difference that appears intermittently — always the same
-pixel count, always the same two states. Magnified, the two renders are visually
-identical: the difference is antialiasing on glyph and image edges.
+**Root cause was a macOS keychain dialog, caused by the harness itself.**
 
-It is bistable rather than a timing race — waiting longer makes it *worse*
-(`streak=4/gap=700` scored 3/5 against 4/5 for the current settings), and eight
-consecutive launches inside a single process were byte-identical while separate
-processes disagree.
+The harness used to pass a redirected `HOME` to the app. macOS resolves the
+login keychain through the home directory, so Chromium's profile encryption
+(OSCrypt — initialised by every Electron app, whether or not it calls
+`safeStorage`) could not find a keychain and popped:
 
-**The fractional-column-width hypothesis was tested and is wrong.** `colW` is
+> A keychain cannot be found to store "staaash Key."
+
+That modal stole focus from the app window at a nondeterministic point relative
+to capture, and persisted until dismissed. It explains every symptom: bistable
+rather than noisy (captured before vs after the dialog); immune to longer waits
+(both states are stable); and identical within one process but divergent across
+processes (the dialog appears once and stays).
+
+`HOME` is no longer passed — it is only a naming convention for selecting the
+fixture. It was originally redirected to stop the legacy migration importing the
+real library, which turned out to be unnecessary: the seeder sets `migrated_v1`,
+so `migrate.js:23` short-circuits first. `assertFixtureSafe()` now enforces that
+precondition instead of trusting it.
+
+Result: **16/16 consecutive clean calibrations**, against ~4/5 before. At the old
+failure rate that streak has probability ≈ 0.003.
+
+### Recorded negative result: fractional column width
+
+Before the real cause was found, the leading hypothesis was fractional column
+width forcing image resampling. **It was tested and is wrong** — recorded here so
+nobody retries it. `colW` is
 `(viewportW − 344) / 3`, integral when `viewportW % 3 == 2`. Ten calibrations at
 each of four widths, re-seeding the fixture at each so card crops matched the
 layout:
@@ -179,21 +206,14 @@ layout:
 | 1439 | 365 | integral | 8/10 | 2,976 px |
 | 1440 | 365.333 | fractional | 6/10 | 3,621 px |
 
-Integral 14/20 clean vs fractional 13/20 — indistinguishable at this n. Making
-the column width integral does **not** fix it, so the app-side change that idea
-implied is not worth making. Each width is bimodal between 0 and one
-width-specific value; the magnitude when it fires is somewhat smaller at
-integral widths (mean 0.057% vs 0.110%), but with only two widths per group that
-is weak and does not follow cleanly from integrality either.
+Integral 14/20 clean vs fractional 13/20 — indistinguishable. The per-width
+residual magnitudes (2,471 / 6,846 / 2,976 / 3,621 px) simply reflect how much
+content the dialog's focus change affected at each width. Do not make the column
+width integral on the strength of this idea; it buys nothing.
 
-Root cause remains open. What is now ruled out: timing/convergence, cold-vs-warm
-profile, GPU rasterization, hover, tied sort order, and fractional column width.
+Any calibration above 0.00% is now a real regression. Read the element list.
 
-Until then: treat a `0.08%` calibration as noise and re-run; treat anything
-larger as a real regression, and read the element list to find it.
-
-The sources of drift below *were* found and fixed, and are handled
-automatically now:
+Other sources of drift found along the way, all handled automatically now:
 
 - **Tied timestamps.** `listBookmarks()` sorts by `created_at DESC` with no
   tiebreaker (`db.js:158`), so bookmarks sharing a timestamp landed in
@@ -212,9 +232,11 @@ automatically now:
 
 ## Reading the numbers
 
-The current `everything` score is **2.10%** whole-screen. With the fixture in
-place, that number is dominated by genuine design-vs-code differences rather
-than by content — which is what makes it worth tracking.
+The current `everything` score is **2.24%** whole-screen, and it is now
+reproducible run to run. (Earlier write-ups said 2.10% — that was one of the two
+focus states the keychain dialog produced; 2.24% is the stable value.) With the
+fixture in place the number is dominated by genuine design-vs-code differences
+rather than by content, which is what makes it worth tracking.
 
 Two divergences it currently surfaces, both real:
 
@@ -239,25 +261,30 @@ Caveats worth knowing:
 
 ## Sensitivity — what the harness can actually see
 
-Measured with `--mutate` against a same-run baseline. Region noise floor is
-0.000% for `sidebar`/`topbar`/`ask-bar` and 0.117% for `gallery`; whole-screen
-noise is 0.079% (the calibration residual above).
+Measured with `--mutate` against a same-run baseline. **Calibration is 0.00%, so
+the noise floor is zero and any non-zero delta is signal** — the practical limit
+is one pixel crossing pixelmatch's per-pixel threshold, not run-to-run variance.
 
 **Geometry** — `.sb { padding-left }` shifted from its default 20px:
 
-| shift | whole-screen | sidebar region | verdict |
+| shift | whole-screen | sidebar region | changed px |
 |---|---|---|---|
-| +0.25px | 0.099% | 0.108% | marginal — at the noise floor |
-| +0.5px | 0.120% | 0.223% | detectable, ~2× noise |
-| +0.75px | 0.213% | 0.729% | clear |
-| +1px | 0.265% | 1.014% | unambiguous, ~9× noise |
-| +2px | 0.381% | 1.644% | unambiguous |
-| +3px | 0.288% | 1.568% | unambiguous |
+| +0.1px | 0.003% | 0.015% | 124 |
+| +0.25px | 0.020% | 0.108% | 900 |
+| +0.5px | 0.041% | 0.223% | 1,863 |
+| +1px | 0.186% | 1.014% | 8,481 |
+| +2px | 0.381%\* | 1.644%\* | — |
+| +3px | 0.288%\* | 1.568%\* | — |
 
-Note the whole-screen column is not monotonic — a 3px shift can score lower
-than a 2px one, because what is being counted is glyph-edge antialiasing at
-different subpixel offsets, not displacement. **Read the region, not the
-whole-screen number, when judging a geometric change.**
+\* measured before the keychain fix, so these carry ~0.08% of noise.
+
+**Even a 0.1px shift is caught** — 124 pixels change. There is no geometric floor
+worth quoting; the limit is one pixel.
+
+Note the whole-screen column is not monotonic at larger shifts — a 3px shift can
+score below a 2px one, because what is counted is glyph-edge antialiasing at
+different subpixel offsets, not displacement. **Judge geometric changes on the
+region, not the whole-screen number.**
 
 **Colour** — `.sb { background-color }` stepped up from `--sidebar: #0a0a09`:
 
@@ -283,10 +310,10 @@ because card artwork is cropped from the reference at app-measured rects:
 
 | | whole-screen | gallery region |
 |---|---|---|
-| vs baseline | 0.993% | **1.459%** (noise 0.117%) |
+| vs baseline | 0.993% | **1.459%** |
 | vs Figma | 2.841% (unmutated 2.230%) | **2.935%** (unmutated 1.852%) |
 
-**The gallery region catches it, ~12× over noise.** The cropping scheme does not
+**The gallery region catches it, unmistakably.** The cropping scheme does not
 mask movement: crops are baked into image files at seed time, so moving a card
 at render time carries those pixels to a position where the reference has
 different content. Cropping neutralises *artwork*, not *geometry* — which is the
