@@ -124,7 +124,30 @@ tokens   1 mismatched
 ```
 
 Figma values come from `visual-diff/figma/<screen>.variables.json`; refresh with
-the Figma MCP `get_variable_defs` and paste into that file. If a screen has no
+the Figma MCP `get_variable_defs` and paste into that file.
+
+## Computed style vs Figma layer properties
+
+The token audit only covers `:root` variables. This covers what an element
+actually paints and how big it is — background, border, radius, shadow, box size
+— against the layer properties pulled from `get_design_context` and
+`get_metadata`, committed to `visual-diff/figma/<screen>.styles.json`:
+
+```
+styles   3 mismatched  · 2 selector(s) from visual-diff/figma/everything.styles.json
+  ✗ .ask height  figma 48px  app 46px
+  ✗ .ask-chip width  figma 101px  app 102.73px
+  ✗ .ask-chip height  figma 24px  app 26px
+```
+
+Colours compare channel-for-channel including alpha, lengths as normalised
+strings, rects to within half a pixel. Only assert what the Figma output states
+outright — where `get_design_context`'s generated Tailwind and `get_metadata`
+disagree (as they do on `.ask` padding), omit the property rather than pick one.
+
+This is what explained the ask-bar colour drift: every colour property matches,
+but the box is 2px short, so its translucent fill composites over different
+backdrop content. If a screen has no
 variables file the `everything` one is borrowed and the report says so.
 
 Colours painted by the probed elements that match **no** Figma token are listed

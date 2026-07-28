@@ -1,0 +1,24 @@
+{
+  "_source": "Figma MCP get_design_context + get_metadata, file yPHeCTtyigj5XqiReFv8NW",
+  "_refresh": "Call get_design_context on the node (properties) and get_metadata (rect), then update the entry.",
+  "_note": "Only assert what the Figma output states outright. Padding is deliberately omitted for .ask: get_design_context's generated Tailwind says py-14px while the metadata places the chip 12px from the frame top, and the two cannot both be right. Guessing between them would manufacture a finding.",
+  "selectors": {
+    ".ask": {
+      "_node": "5181:540",
+      "_name": "search",
+      "background-color": "rgba(32, 30, 30, 0.92)",
+      "border-radius": "16px",
+      "box-shadow": "rgba(3, 3, 3, 0.2) 0px 4px 8px 0px",
+      "border-top-color": "rgba(250, 255, 230, 0.04)",
+      "_rect": { "width": 692, "height": 48 }
+    },
+    ".ask-chip": {
+      "_node": "5181:541",
+      "_name": "ai",
+      "background-color": "rgba(79, 107, 237, 0.2)",
+      "border-radius": "6px",
+      "border-top-color": "rgba(79, 107, 237, 0.1)",
+      "_rect": { "width": 101, "height": 24 }
+    }
+  }
+}

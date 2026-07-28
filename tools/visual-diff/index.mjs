@@ -220,7 +220,7 @@ const normHex = (v) => {
 }
 
 /** Read :root custom properties and per-element computed styles from the page. */
-async function collectStyles(page, selectors, varNames) {
+async function collectStyles(page, selectors, varNames, extraProps = []) {
   return page.evaluate(
     ({ sels, props, vars }) => {
       const rootCS = getComputedStyle(document.documentElement)
@@ -228,16 +228,67 @@ async function collectStyles(page, selectors, varNames) {
         vars.map((v) => [v, rootCS.getPropertyValue(v).trim() || null])
       )
       const elements = {}
+      const rects = {}
       for (const sel of sels) {
         const el = document.querySelector(sel)
-        if (!el) { elements[sel] = null; continue }
+        if (!el) { elements[sel] = null; rects[sel] = null; continue }
         const cs = getComputedStyle(el)
         elements[sel] = Object.fromEntries(props.map((p) => [p, cs.getPropertyValue(p).trim()]))
+        const b = el.getBoundingClientRect()
+        rects[sel] = {
+          x: +b.x.toFixed(2), y: +b.y.toFixed(2),
+          width: +b.width.toFixed(2), height: +b.height.toFixed(2)
+        }
       }
-      return { tokens, elements }
+      return { tokens, elements, rects }
     },
-    { sels: selectors, props: STYLE_PROPS, vars: varNames }
+    { sels: selectors, props: [...new Set([...STYLE_PROPS, ...extraProps])], vars: varNames }
   )
+}
+
+/**
+ * Diff computed styles against properties read out of Figma.
+ *
+ * The token audit only covers :root variables. This covers what an element
+ * actually paints and how big it is — background, border, radius, shadow, box
+ * size — against the layer properties from `get_design_context`/`get_metadata`,
+ * committed to visual-diff/figma/<screen>.styles.json.
+ *
+ * Colours are compared channel-for-channel including alpha; lengths as
+ * normalised strings; rects to within half a pixel.
+ */
+function auditStyles(styles, spec) {
+  const findings = []
+  for (const [sel, want] of Object.entries(spec.selectors || {})) {
+    const got = styles.elements[sel]
+    if (!got) {
+      findings.push({ selector: sel, property: '(element)', expected: 'present', actual: 'not found' })
+      continue
+    }
+    for (const [prop, expected] of Object.entries(want)) {
+      if (prop.startsWith('_')) continue
+      const actual = got[prop]
+      if (actual === undefined) continue
+      const ea = parseRgba(expected), aa = parseRgba(actual)
+      const same = ea && aa
+        ? ea.slice(0, 3).every((v, i) => v === aa[i]) && Math.abs(ea[3] - aa[3]) < 0.0005
+        : String(expected).replace(/\s+/g, ' ').trim() === String(actual).replace(/\s+/g, ' ').trim()
+      if (!same) findings.push({ selector: sel, property: prop, expected, actual })
+    }
+    if (want._rect) {
+      const r = styles.rects[sel]
+      for (const dim of ['width', 'height']) {
+        if (want._rect[dim] == null || !r) continue
+        if (Math.abs(r[dim] - want._rect[dim]) > 0.5) {
+          findings.push({
+            selector: sel, property: dim,
+            expected: `${want._rect[dim]}px`, actual: `${r[dim]}px`
+          })
+        }
+      }
+    }
+  }
+  return findings
 }
 
 const rgbOf = (h) => {
@@ -591,9 +642,23 @@ async function main() {
     const captureOnce = () =>
       withApp({ cfg, screen, configDir }, async ({ page, settled }) => {
         const shot = await stableScreenshot(page)
-        const styles = await collectStyles(page, RECT_SELECTORS, Object.keys(cfg.tokenMap || {}))
+        const specSels = Object.keys(styleSpec?.selectors || {})
+        const specProps = Object.values(styleSpec?.selectors || {})
+          .flatMap((v) => Object.keys(v).filter((k) => !k.startsWith('_')))
+        const styles = await collectStyles(
+          page,
+          [...new Set([...RECT_SELECTORS, ...specSels])],
+          Object.keys(cfg.tokenMap || {}),
+          specProps
+        )
         return { png: shot.png, settled, settledAfter: shot.settledAfter, styles }
       })
+
+    const stylePath = [
+      join(REF_DIR, `${screen.id}.styles.json`),
+      join(REF_DIR, 'everything.styles.json')
+    ].find((p2) => existsSync(p2))
+    const styleSpec = stylePath ? JSON.parse(await readFile(stylePath, 'utf8')) : null
 
     const capA = await captureOnce()
     let agreement = { captures: 1, identical: null, diffPixels: null }
@@ -756,9 +821,26 @@ async function main() {
             `${m.delta ? `  Δ(${m.delta.join(',')})` : ''}  ${c.dim(`(${m.reason})`)}\n`
         )
       }
-      for (const u of tokenAudit.unmatched.slice(0, 8)) {
+      for (const u of tokenAudit.unmatched.slice(0, 6)) {
         process.stdout.write(
           `      ${c.yellow('?')} ${u.value} ${c.dim(`on ${u.selector} ${u.property} — no Figma token`)}\n`
+        )
+      }
+    }
+
+    // ── computed style vs Figma layer properties ─────────────────────────────
+    let styleAudit = null
+    if (styleSpec) {
+      styleAudit = auditStyles(capA.styles, styleSpec)
+      const n = styleAudit.length
+      process.stdout.write(
+        `    styles   ${n === 0 ? c.green('all match') : c.red(`${n} mismatched`)}` +
+          `${c.dim(`  · ${Object.keys(styleSpec.selectors || {}).length} selector(s) from ${relative(REPO, stylePath)}`)}\n`
+      )
+      for (const f of styleAudit.slice(0, 10)) {
+        process.stdout.write(
+          `      ${c.red('✗')} ${f.selector} ${c.dim(f.property)}  ` +
+            `figma ${f.expected}  ${c.dim('app')} ${f.actual}\n`
         )
       }
     }
@@ -784,6 +866,7 @@ async function main() {
       regions,
       colourCheck,
       tokenAudit,
+      styleAudit,
       referenceSource: ref?.source ?? null,
       artifacts: Object.fromEntries(Object.entries(paths || {}).map(([k, v]) => [k, relative(REPO, v)]))
     })

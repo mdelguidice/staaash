@@ -108,11 +108,10 @@ export default {
     {
       id: 'settings',
 
-      // UNKNOWN. The Figma MCP only exposes this file's Cover page, so the node
-      // id for the settings frame could not be discovered — and guessing one
-      // would produce a confidently wrong reference. Fill it in and the Figma
-      // delta starts working; until then this screen still runs calibration,
-      // the exact colour check and the token audit.
+      // NOT DESIGNED YET. There is no settings frame in the Figma file, so a
+      // pixel delta is impossible by definition rather than pending a lookup.
+      // The screen still earns its place: it calibrates, audits tokens, and
+      // diffs computed styles. Add the node id when the design exists.
       figmaNodeId: null,
 
       frame: { width: 1440, height: 792 },
@@ -137,7 +136,7 @@ export default {
 
     {
       id: 'drawer-open',
-      figmaNodeId: null, // UNKNOWN — see the note on `settings` above
+      figmaNodeId: null, // NOT DESIGNED YET — see the note on `settings` above
       frame: { width: 1440, height: 792 },
 
       route: {
