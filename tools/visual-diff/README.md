@@ -43,7 +43,41 @@ For every screen in [`visual-diff.config.mjs`](../../visual-diff.config.mjs):
 | `--rects` | print measured layout geometry and exit — use to author `regions` |
 | `--rects=.a,.b` | same, plus your own selectors |
 | `--refresh` | re-fetch references from Figma even if cached |
+| `--frame=WxH` | override the capture viewport (calibrate / mutate only) |
+| `--mutate=<sel>:<prop>:<val>` | inject a style override and score it (repeatable) |
 | `--config=<path>` | use a different config file |
+
+## Mutation testing — `--mutate`
+
+Injects a temporary style override, captures, and scores it against an
+unmutated baseline captured in the same run. Repeatable; the baseline is
+captured once and reused, so a sweep costs one launch per mutation plus one.
+
+```bash
+node tools/visual-diff/index.mjs \
+  --mutate=.sb:padding-left:21px \
+  --mutate=.sb:background-color:#0b0b0a
+```
+
+The spec is parsed **from the right**, so selectors containing colons still
+work (`a:hover:color:red`). Each mutation reports its delta against the
+baseline and, when the frame was not overridden, against the Figma reference
+too — plus every configured region. Results land in
+`visual-diff/<id>.mutations.json`.
+
+This is how you find the harness's detection floor: mutate by a known amount
+and see whether the score moves out of the noise. See "Sensitivity" below.
+
+## `--frame=WxH`
+
+Overrides the capture viewport. Calibration and mutation runs compare app
+captures to each other, so the Figma frame size is irrelevant to them and the
+width is free. The Figma diff ignores this flag's usefulness — a score against
+a reference is only valid at the reference's own size.
+
+`seed-fixture.mjs` takes the same flag, because card crops are measured at the
+seeding viewport. **Re-seed at the config frame afterwards**, or the Figma diff
+will compare wrongly-sized artwork.
 
 ## Fixtures
 
@@ -131,11 +165,29 @@ identical: the difference is antialiasing on glyph and image edges.
 It is bistable rather than a timing race — waiting longer makes it *worse*
 (`streak=4/gap=700` scored 3/5 against 4/5 for the current settings), and eight
 consecutive launches inside a single process were byte-identical while separate
-processes disagree. The most likely cause is Chromium's two-stage image
-rasterization: cards are 365.33 CSS px wide, so the 730px crops are displayed at
-730.67 and must be resampled, and the low- and high-quality raster passes both
-hold stable. Fixing it properly probably means making the card width integral,
-which would be an app change.
+processes disagree.
+
+**The fractional-column-width hypothesis was tested and is wrong.** `colW` is
+`(viewportW − 344) / 3`, integral when `viewportW % 3 == 2`. Ten calibrations at
+each of four widths, re-seeding the fixture at each so card crops matched the
+layout:
+
+| viewport | colW | | clean | residual when it fires |
+|---|---|---|---|---|
+| 1436 | 364 | integral | 6/10 | 2,471 px |
+| 1438 | 364.667 | fractional | 7/10 | 6,846 px |
+| 1439 | 365 | integral | 8/10 | 2,976 px |
+| 1440 | 365.333 | fractional | 6/10 | 3,621 px |
+
+Integral 14/20 clean vs fractional 13/20 — indistinguishable at this n. Making
+the column width integral does **not** fix it, so the app-side change that idea
+implied is not worth making. Each width is bimodal between 0 and one
+width-specific value; the magnitude when it fires is somewhat smaller at
+integral widths (mean 0.057% vs 0.110%), but with only two widths per group that
+is weak and does not follow cleanly from integrality either.
+
+Root cause remains open. What is now ruled out: timing/convergence, cold-vs-warm
+profile, GPU rasterization, hover, tied sort order, and fractional column width.
 
 Until then: treat a `0.08%` calibration as noise and re-run; treat anything
 larger as a real regression, and read the element list to find it.
@@ -184,6 +236,61 @@ Caveats worth knowing:
 - Card artwork is cropped from the reference, so it cannot disagree. Image
   *rendering* (fit, radius, letterboxing) is still compared; image *content* is
   deliberately neutralised.
+
+## Sensitivity — what the harness can actually see
+
+Measured with `--mutate` against a same-run baseline. Region noise floor is
+0.000% for `sidebar`/`topbar`/`ask-bar` and 0.117% for `gallery`; whole-screen
+noise is 0.079% (the calibration residual above).
+
+**Geometry** — `.sb { padding-left }` shifted from its default 20px:
+
+| shift | whole-screen | sidebar region | verdict |
+|---|---|---|---|
+| +0.25px | 0.099% | 0.108% | marginal — at the noise floor |
+| +0.5px | 0.120% | 0.223% | detectable, ~2× noise |
+| +0.75px | 0.213% | 0.729% | clear |
+| +1px | 0.265% | 1.014% | unambiguous, ~9× noise |
+| +2px | 0.381% | 1.644% | unambiguous |
+| +3px | 0.288% | 1.568% | unambiguous |
+
+Note the whole-screen column is not monotonic — a 3px shift can score lower
+than a 2px one, because what is being counted is glyph-edge antialiasing at
+different subpixel offsets, not displacement. **Read the region, not the
+whole-screen number, when judging a geometric change.**
+
+**Colour** — `.sb { background-color }` stepped up from `--sidebar: #0a0a09`:
+
+| step | sidebar region |
+|---|---|
+| +1, +2, +4, +8, +16, +20, +24, +26 | **0.000% — invisible** |
+| +27 | 90.558% |
+| +28 | 92.323% |
+| +32 | 93.897% |
+
+This is a cliff, not a ramp, and it is a real blind spot. `pixelmatch` counts a
+pixel only when its YIQ distance exceeds `35215 × threshold²`; for a neutral
+grey that is `0.5053 × Δ² > 352.15`, i.e. **Δ > 26.4 of 255**. Measured floor
+sits between +26 and +27, matching exactly.
+
+So: **a flat colour can drift by up to ~10% of the 0–255 range and score
+0.000%.** A subtly wrong background or token value will pass silently. If you
+care about colour fidelity, lower `defaults.threshold` — at the cost of
+counting more text-antialiasing noise, which is what 0.1 was chosen to suppress.
+
+**Card displacement** — one card offset 10px (`margin-top`), which matters
+because card artwork is cropped from the reference at app-measured rects:
+
+| | whole-screen | gallery region |
+|---|---|---|
+| vs baseline | 0.993% | **1.459%** (noise 0.117%) |
+| vs Figma | 2.841% (unmutated 2.230%) | **2.935%** (unmutated 1.852%) |
+
+**The gallery region catches it, ~12× over noise.** The cropping scheme does not
+mask movement: crops are baked into image files at seed time, so moving a card
+at render time carries those pixels to a position where the reference has
+different content. Cropping neutralises *artwork*, not *geometry* — which is the
+intended trade.
 
 ## Authoring regions
 

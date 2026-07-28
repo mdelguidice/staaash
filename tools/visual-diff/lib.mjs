@@ -134,7 +134,7 @@ export async function runSteps(page, steps = []) {
  * Launch the app, size it to the frame, drive it to the screen's state, then
  * hand the page to `fn`. Always closes the app afterwards.
  */
-export async function withApp({ cfg, screen, configDir, skipSteps = false }, fn) {
+export async function withApp({ cfg, screen, configDir, skipSteps = false, extraCss = null }, fn) {
   const appDir = resolve(configDir, cfg.app.dir)
   const mainEntry = join(appDir, 'out', 'main', 'index.js')
   if (!existsSync(mainEntry)) {
@@ -237,6 +237,9 @@ export async function withApp({ cfg, screen, configDir, skipSteps = false }, fn)
     if (cfg.defaults.hideScrollbars !== false) {
       await page.addStyleTag({ content: STABILISE_CSS })
     }
+
+    // Mutation overrides go last so they win against the stabilise pass.
+    if (extraCss) await page.addStyleTag({ content: extraCss })
 
     // Webfonts are bundled but still load asynchronously; text painted before
     // they resolve uses a fallback face and every glyph differs.

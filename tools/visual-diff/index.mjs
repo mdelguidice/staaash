@@ -36,6 +36,38 @@ const opt = (name) => {
   return hit ? hit.slice(name.length + 3) : null
 }
 const onlyScreens = argv.filter((a) => a.startsWith('--screen=')).map((a) => a.slice(9))
+const mutateSpecs = argv.filter((a) => a.startsWith('--mutate=')).map((a) => a.slice(9))
+
+/**
+ * `--mutate=<selector>:<property>:<value>` — parsed from the RIGHT, so
+ * selectors containing colons still work (a:hover:color:red).
+ */
+function parseMutation(spec) {
+  const vi = spec.lastIndexOf(':')
+  const rest = vi < 0 ? '' : spec.slice(0, vi)
+  const pi = rest.lastIndexOf(':')
+  if (vi < 0 || pi < 0) {
+    die(`Bad --mutate "${spec}". Expected <selector>:<property>:<value>, e.g.\n` +
+        `    --mutate=.sb:padding-left:21px`)
+  }
+  const selector = rest.slice(0, pi)
+  const property = rest.slice(pi + 1)
+  const value = spec.slice(vi + 1)
+  return {
+    spec, selector, property, value,
+    css: `${selector} { ${property}: ${value} !important; }`
+  }
+}
+
+/** `--frame=WxH` overrides a screen's frame. Calibration and mutation runs do
+ *  not touch the Figma reference, so the capture size is free there. */
+function frameOverride() {
+  const raw = opt('frame')
+  if (!raw) return null
+  const m = /^(\d+)x(\d+)$/.exec(raw.trim())
+  if (!m) die(`Bad --frame "${raw}". Expected WxH, e.g. --frame=1439x792`)
+  return { width: +m[1], height: +m[2] }
+}
 
 const OUT_DIR = join(REPO, 'visual-diff')
 const REF_DIR = join(OUT_DIR, 'figma')
@@ -162,6 +194,25 @@ async function calibrateScreen(screen, cfg, configDir) {
   })
 }
 
+/** Score every configured region between two raw RGBA buffers. */
+function scoreRegions(aData, bData, screen, W, H, scale, defaults) {
+  const out = []
+  for (const r of screen.regions || []) {
+    const rx = r.x * scale, ry = r.y * scale
+    const rw = Math.min(r.width * scale, W - rx)
+    const rh = Math.min(r.height * scale, H - ry)
+    if (rw <= 0 || rh <= 0) continue
+    const s = scorePixels(
+      cropRaw(aData, W, rx, ry, rw, rh), cropRaw(bData, W, rx, ry, rw, rh), rw, rh, defaults
+    )
+    out.push({
+      name: r.name, diffPixels: s.mismatched, totalPixels: s.total,
+      diffPercent: +s.percent.toFixed(3)
+    })
+  }
+  return out
+}
+
 // ─── main ────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -183,7 +234,15 @@ async function main() {
     ? `fixture ${relative(REPO, fixtureHome)}`
     : c.yellow('REAL library (~/Library/Application Support/staaash)')
 
-  const mode = flag('calibrate') ? 'calibrate' : flag('rects') || opt('rects') ? 'rects' : 'diff'
+  const fo = frameOverride()
+  const mutations = mutateSpecs.map(parseMutation)
+  const mode = flag('calibrate')
+    ? 'calibrate'
+    : mutations.length
+      ? 'mutate'
+      : flag('rects') || opt('rects')
+        ? 'rects'
+        : 'diff'
   console.log(
     `\n${c.bold(`visual diff${mode === 'diff' ? '' : ` · ${mode}`}`)} ` +
       `${c.dim(`· ${screens.length} screen(s) · ${dataNote}`)}\n`
@@ -192,7 +251,8 @@ async function main() {
   const results = []
   let failed = false
 
-  for (const screen of screens) {
+  for (const rawScreen of screens) {
+    const screen = fo ? { ...rawScreen, frame: fo } : rawScreen
     const { width, height } = screen.frame
     const scale = cfg.figma.scale
     const W = width * scale
@@ -225,6 +285,71 @@ async function main() {
         console.log(`      ${sel.padEnd(10)} ${r ? JSON.stringify(r) : c.dim('not present')}`)
       }
       console.log()
+      continue
+    }
+
+    // ── --mutate ─────────────────────────────────────────────────────────────
+    if (mode === 'mutate') {
+      const cap = async (extraCss) =>
+        withApp({ cfg, screen, configDir, extraCss }, async ({ page }) => {
+          const s = await stableScreenshot(page)
+          if (!s.settledAfter) console.warn(c.yellow('    ! never stopped repainting'))
+          return s.png
+        })
+
+      const baselinePng = await cap(null)
+      const base = await toRaw(baselinePng, W, H)
+      process.stdout.write(`    ${c.dim('baseline captured')}\n`)
+
+      // Only meaningful against Figma when the frame was not overridden.
+      let fig = null
+      let figBase = null
+      if (!fo) {
+        const ref = await getFigmaRef(screen, cfg.figma, false)
+        fig = await toRaw(await readFile(ref.path), W, H)
+        figBase = scorePixels(fig.data, base.data, W, H, cfg.defaults).percent
+      }
+
+      const rows = []
+      for (const m of mutations) {
+        const png = await cap(m.css)
+        const mut = await toRaw(png, W, H)
+        const vsBase = scorePixels(base.data, mut.data, W, H, cfg.defaults)
+        const regions = scoreRegions(base.data, mut.data, screen, W, H, scale, cfg.defaults)
+        const vsFig = fig ? scorePixels(fig.data, mut.data, W, H, cfg.defaults).percent : null
+        const figRegions = fig
+          ? scoreRegions(fig.data, mut.data, screen, W, H, scale, cfg.defaults)
+          : []
+
+        const tint = vsBase.percent === 0 ? c.red : vsBase.percent < 0.1 ? c.yellow : c.green
+        process.stdout.write(
+          `    ${c.bold(`${m.selector} { ${m.property}: ${m.value} }`)}\n` +
+            `      vs baseline ${tint(`${vsBase.percent.toFixed(3)}%`)} ` +
+            `${c.dim(`(${vsBase.diffPixels ?? vsBase.mismatched} px)`)}  ` +
+            regions.map((r) => `${r.name} ${r.diffPercent.toFixed(3)}%`).join('  ') + `\n`
+        )
+        if (vsFig !== null) {
+          process.stdout.write(
+            `      vs figma    ${vsFig.toFixed(3)}% ${c.dim(`(unmutated ${figBase.toFixed(3)}%)`)}  ` +
+              figRegions.map((r) => `${r.name} ${r.diffPercent.toFixed(3)}%`).join('  ') + `\n`
+          )
+        }
+
+        rows.push({
+          selector: m.selector, property: m.property, value: m.value,
+          vsBaseline: { diffPixels: vsBase.mismatched, diffPercent: +vsBase.percent.toFixed(4), regions },
+          vsFigma: vsFig === null ? null : { diffPercent: +vsFig.toFixed(4), regions: figRegions }
+        })
+      }
+
+      await writeFile(
+        join(OUT_DIR, `${screen.id}.mutations.json`),
+        JSON.stringify(
+          { screen: screen.id, frame: screen.frame, figmaBaselinePercent: figBase, mutations: rows },
+          null, 2
+        ) + '\n'
+      )
+      process.stdout.write(`    ${c.dim(`→ ${relative(REPO, join(OUT_DIR, `${screen.id}.mutations.json`))}`)}\n\n`)
       continue
     }
 

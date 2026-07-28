@@ -42,8 +42,16 @@ const configDir = resolve(configPath, '..')
 const cfg = (await import(pathToFileURL(configPath).href)).default
 const spec = (await import(pathToFileURL(specPath).href)).default
 
-const screen = cfg.screens.find((s) => s.id === spec.screen)
-if (!screen) die(`Fixture targets screen "${spec.screen}", which the config does not define.`)
+const rawScreen = cfg.screens.find((s) => s.id === spec.screen)
+if (!rawScreen) die(`Fixture targets screen "${spec.screen}", which the config does not define.`)
+
+// `--frame=WxH` seeds card crops for a different viewport. Used to test how
+// layout geometry affects capture reproducibility; re-seed at the config frame
+// afterwards or the Figma diff will compare wrongly-sized artwork.
+const fm = opt('frame') ? /^(\d+)x(\d+)$/.exec(opt('frame').trim()) : null
+if (opt('frame') && !fm) die(`Bad --frame "${opt('frame')}". Expected WxH.`)
+const screen = fm ? { ...rawScreen, frame: { width: +fm[1], height: +fm[2] } } : rawScreen
+if (fm) console.log(`  ${c.yellow('!')} seeding for ${screen.frame.width}×${screen.frame.height}, not the config frame`)
 
 const { appData, fixtureHome } = resolveAppEnv(cfg, configDir)
 if (!appData) {

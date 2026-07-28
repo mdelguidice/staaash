@@ -25,6 +25,8 @@ plus a config at the repo root.
 | topbar region | 1.81% |
 | ask-bar region | 1.71% |
 | `--calibrate` | passes ~4 runs in 5; residual 0.08% (3,621 px) |
+| Detection floor — geometry | ~0.5px shift; 1px unambiguous (read the region) |
+| Detection floor — flat colour | **27 of 255** — a hard cliff, nothing below |
 
 Trajectory: 44.48% (real library, no fixture) → 2.10% (seeded fixture, correct
 viewport). The early numbers were also captured at the **wrong viewport** — see
@@ -35,7 +37,7 @@ viewport). The early numbers were also captured at the **wrong viewport** — se
 ```
 visual-diff.config.mjs              # editable frame→route mapping (repo root)
 tools/visual-diff/
-  index.mjs                         # CLI: diff / --calibrate / --rects
+  index.mjs                         # CLI: diff / --calibrate / --mutate / --rects / --frame
   lib.mjs                           # launch, size, steps, capture, compare
   seed-fixture.mjs                  # Node orchestrator for fixture seeding
   seed-app/main.mjs                 # Electron-side seeder (+ image patch mode)
@@ -56,6 +58,8 @@ node tools/visual-diff/seed-fixture.mjs
 node tools/visual-diff/index.mjs
 node tools/visual-diff/index.mjs --calibrate
 node tools/visual-diff/index.mjs --rects
+node tools/visual-diff/index.mjs --mutate=.sb:padding-left:21px   # sensitivity
+node tools/visual-diff/index.mjs --calibrate --frame=1439x792     # other viewport
 ```
 
 ## Non-obvious things — do not re-derive these the hard way
@@ -147,8 +151,11 @@ without touching app code.
   `streak=3/gap=500` (4/5), and 8 launches inside one process were
   byte-identical while separate processes disagree. Leading hypothesis: cards
   are 365.33 CSS px wide, so the 730px crops display at 730.67 and must be
-  resampled, and Chromium's low- and high-quality raster passes are both stable.
-  A proper fix likely means making the card column width integral — an app change.
+  resampled. **This was tested and disproven** — see README "Current status".
+  Ten calibrations at each of four widths (re-seeding per width) gave 14/20
+  clean at integral colW vs 13/20 fractional: no real difference. Root cause is
+  still open; timing, cold/warm profile, GPU raster, hover, tied sort order and
+  fractional column width are all ruled out.
 
 - **Fixture timestamps are relative to seed time.** `"2 days ago"` labels drift
   once the fixture ages past a boundary. Re-seed. No staleness warning is
@@ -181,10 +188,11 @@ None were fixed (no app changes allowed).
    (`waitFor`/`click`/`clickText`/`key`/`eval`/`wait`). The config has a
    commented template. Candidates: settings overlay, drawer open, list layout,
    empty/trash states.
-3. **Chase the 0.08%** only if a stricter gate is wanted. Test the integral-card-width
-   hypothesis by temporarily forcing `MIN_COL_W`/gaps so `colW` is a whole number
-   and re-running `--calibrate`. If that lands 0.00%, it is worth proposing as an
-   app change.
+3. **Chase the 0.08%** only if a stricter gate is wanted. The integral-column-width
+   idea is already tested and dead — do not redo it. Untried angles: bisect by
+   removing card images entirely from the fixture (is it image raster or text
+   raster?), or capture via Electron's `capturePage()` instead of CDP to see
+   whether the capture path itself is implicated.
 4. **Gitignore `visual-diff/` outputs and `fixtures/*/home/`** — currently
    untracked and would otherwise commit ~3MB of binaries per run. Deliberately
    not done, since touching `.gitignore` was not asked for.
