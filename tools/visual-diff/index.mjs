@@ -240,6 +240,64 @@ async function collectStyles(page, selectors, varNames) {
   )
 }
 
+const rgbOf = (h) => {
+  const v = normHex(h)
+  return v ? [1, 3, 5].map((i) => parseInt(v.slice(i, i + 2), 16)) : null
+}
+
+/**
+ * Resolve what a tokenMap entry says the app *should* be painting.
+ *
+ * Three forms:
+ *   'ink/500'                                  → a Figma variable, compared as hex
+ *   { color, alpha, over: 'ink/500' }          → a translucent fill composited
+ *                                                over a base token, compared as
+ *                                                the resulting flat hex
+ *   { color, alpha }                           → a translucent value compared as
+ *                                                rgba, channel for channel
+ *
+ * The composite form matters because a design can specify a colour that never
+ * exists as a token: "#F6F3F3 at 1% over #080808" renders #0a0a0a, and an app
+ * that hardcodes a hand-flattened approximation of it will drift by a level or
+ * two — far below anything pixelmatch can see.
+ */
+function resolveExpected(spec, figmaVars) {
+  if (typeof spec === 'string') {
+    const raw = figmaVars[spec]
+    return { label: spec, hex: normHex(raw), raw: raw ?? null }
+  }
+  if (spec && spec.color && spec.alpha != null) {
+    const fg = rgbOf(spec.color)
+    if (!fg) return { label: String(spec.color), error: 'fill is not a colour' }
+    if (spec.over) {
+      const bg = rgbOf(figmaVars[spec.over])
+      if (!bg) return { label: `over ${spec.over}`, error: `base token ${spec.over} not found` }
+      const mixed = fg.map((f, i) => Math.round(f * spec.alpha + bg[i] * (1 - spec.alpha)))
+      const hex = '#' + mixed.map((v) => v.toString(16).padStart(2, '0')).join('')
+      return {
+        label: `${spec.color} @${spec.alpha * 100}% over ${spec.over}`,
+        hex, raw: hex, composite: true
+      }
+    }
+    return {
+      label: `${spec.color} @${spec.alpha * 100}%`,
+      rgba: [...fg, spec.alpha],
+      raw: `rgba(${fg.join(', ')}, ${spec.alpha})`
+    }
+  }
+  return { label: JSON.stringify(spec), error: 'unrecognised tokenMap entry' }
+}
+
+/** Parse an app value into [r,g,b,a] for comparison against an alpha spec. */
+function parseRgba(v) {
+  const m = /^rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)(?:[,\s/]+([\d.]+))?/.exec(String(v).trim())
+  if (!m) {
+    const hex = rgbOf(v)
+    return hex ? [...hex, 1] : null
+  }
+  return [+m[1], +m[2], +m[3], m[4] === undefined ? 1 : parseFloat(m[4])]
+}
+
 /**
  * Compare the app's design tokens against the Figma variables exactly.
  *
@@ -250,20 +308,39 @@ async function collectStyles(page, selectors, varNames) {
  */
 function auditTokens(styles, figmaVars, tokenMap) {
   const mapped = []
-  for (const [cssVar, figmaName] of Object.entries(tokenMap || {})) {
+  for (const [cssVar, spec] of Object.entries(tokenMap || {})) {
     const appRaw = styles.tokens[cssVar]
-    const figRaw = figmaVars[figmaName]
-    const appHex = normHex(appRaw)
-    const figHex = normHex(figRaw)
-    mapped.push({
-      cssVar, figmaToken: figmaName,
-      app: appRaw ?? null, figma: figRaw ?? null,
-      match: !!appHex && !!figHex && appHex === figHex,
-      reason: !figRaw ? 'figma token not found'
-        : !appRaw ? 'css var not defined'
-        : !appHex || !figHex ? 'not a comparable colour'
-        : appHex === figHex ? null : 'value differs'
-    })
+    const want = resolveExpected(spec, figmaVars)
+    const entry = {
+      cssVar, expects: want.label, composite: !!want.composite,
+      app: appRaw ?? null, figma: want.raw ?? null, match: false, reason: null
+    }
+
+    if (want.error) entry.reason = want.error
+    else if (!appRaw) entry.reason = 'css var not defined'
+    else if (want.rgba) {
+      const got = parseRgba(appRaw)
+      if (!got) entry.reason = 'app value is not a colour'
+      else {
+        const sameRGB = got.slice(0, 3).every((v, i) => v === want.rgba[i])
+        const sameA = Math.abs(got[3] - want.rgba[3]) < 0.0005
+        entry.match = sameRGB && sameA
+        if (!entry.match) entry.reason = sameRGB ? 'alpha differs' : 'value differs'
+      }
+    } else if (!want.hex) entry.reason = 'figma token not found'
+    else {
+      const appHex = normHex(appRaw)
+      if (!appHex) entry.reason = 'app value is not a comparable colour'
+      else {
+        entry.match = appHex === want.hex
+        if (!entry.match) {
+          const a = rgbOf(appHex), b = rgbOf(want.hex)
+          entry.delta = a && b ? a.map((v, i) => v - b[i]) : null
+          entry.reason = 'value differs'
+        }
+      }
+    }
+    mapped.push(entry)
   }
 
   // Every colour actually painted by the probed elements, matched back to a
@@ -674,8 +751,9 @@ async function main() {
       )
       for (const m of bad) {
         process.stdout.write(
-          `      ${c.red('✗')} ${m.cssVar} ${c.dim('vs')} ${m.figmaToken}  ` +
-            `app ${m.app ?? '—'}  figma ${m.figma ?? '—'}  ${c.dim(`(${m.reason})`)}\n`
+          `      ${c.red('✗')} ${m.cssVar} ${c.dim('should be')} ${m.expects}\n` +
+            `        app ${m.app ?? '—'}  expected ${m.figma ?? '—'}` +
+            `${m.delta ? `  Δ(${m.delta.join(',')})` : ''}  ${c.dim(`(${m.reason})`)}\n`
         )
       }
       for (const u of tokenAudit.unmatched.slice(0, 8)) {

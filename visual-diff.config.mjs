@@ -189,6 +189,20 @@ export default {
     '--volt': 'acid/500',
     '--volt-deep': 'acid/600',
     '--ink-on-volt': 'acid/950',
-    '--ink-on-volt-badge': 'acid/900'
+    '--ink-on-volt-badge': 'acid/900',
+
+    // Layered values. Some of the design is specified as a translucent fill
+    // over another token, so the colour it renders exists nowhere as a variable
+    // — and an app that hardcodes a hand-flattened approximation drifts by a
+    // level or two, which pixelmatch structurally cannot see.
+    //
+    //   { color, alpha, over }  → composited against the base token, compared
+    //                             as the resulting flat hex
+    //   { color, alpha }        → compared as rgba, channel for channel
+    //
+    // Source: Mike's spec for the sidebar, 2026-07-28.
+    // #F6F3F3 @ 1% over #080808 = (10.38, 10.35, 10.35) → #0a0a0a.
+    '--sidebar': { color: '#F6F3F3', alpha: 0.01, over: 'ink/500' },
+    '--border': { color: '#FAFFE6', alpha: 0.06 }
   }
 }

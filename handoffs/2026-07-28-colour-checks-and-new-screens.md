@@ -80,6 +80,37 @@ sidebar still renders a different colour from the design. The drift lives in
 values that were never tokenised — so a token audit alone would have passed, and
 a pixel diff alone would have passed. It took both checks to find it.
 
+### Root cause of the sidebar drift — RESOLVED
+
+Mike supplied the real spec: the sidebar is **`#F6F3F3` at 1%** with a stroke of
+**`#FAFFE6` at 6%**, over a global background of **`#080808`**. It is not a flat
+colour at all.
+
+```
+#F6F3F3 @ 1% over #080808  =  (10.38, 10.35, 10.35)  →  #0a0a0a
+```
+
+Which is exactly what Figma renders. The app hardcodes `#0a0a09` — a
+hand-flattened approximation ("ink + 1% warm white" per the source comment) with
+the **blue channel rounded down**, 10.35 → 9 instead of 10.
+
+The stroke needs no change: `#FAFFE6` at 6% is byte-identical to the app's
+`--border: rgba(250, 255, 230, 0.06)`.
+
+**Fix (not applied — no app code changes):** in `styles.css`, either flatten
+correctly to `#0a0a0a`, or better, stop flattening — `background: rgba(246, 243,
+243, 0.01)` layered over the canvas renders `#0a0a0a` and survives any future
+change to the canvas colour.
+
+The harness now encodes this as a permanent check. `tokenMap` gained two layered
+forms — `{ color, alpha, over }` (composited, compared as flat hex) and
+`{ color, alpha }` (compared as rgba) — so the audit reports:
+
+```
+✗ --sidebar should be #F6F3F3 @1% over ink/500
+  app #0a0a09  expected #0a0a0a  Δ(0,0,-1)
+```
+
 ---
 
 ## Steps taken
@@ -131,9 +162,12 @@ those screens already works: routes, calibration, colour check, token audit.
 ## Suggested next steps
 
 1. **Supply the two node ids** and re-run — that alone completes the ranking.
-2. **Decide on the sidebar colour.** `#0a0a0a` (design) vs `#0a0a09` (app). One
-   is wrong; the app's value has no Figma token behind it, which is probably the
-   root problem. Same question for `.ask` `#201e1e` and the ask-bar Δ2.
+2. **Apply the sidebar fix** (one line in `styles.css`, see above). The
+   remaining unexplained drifts are the ask bar (`#1d1c1c` → `#1f1e1e`, Δ2 across
+   ~98% of its flat samples, app value `#201e1e` untokenised) and the gallery
+   (`#0b0b0b` → `#080808`, Δ3). The app paints `#080808` there, which matches the
+   stated global background — so the Figma side may carry an extra layer. Both
+   need the same treatment: get the real spec, encode it as a layered token.
 3. **Tokenise the untokenised.** If `--sidebar` and the ask-bar fill became real
    Figma variables, the audit would catch future drift automatically.
 4. **Extend `tokenMap`.** Only 7 pairs are mapped. Unmapped app vars and unused

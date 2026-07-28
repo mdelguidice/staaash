@@ -102,6 +102,27 @@ tokens   7/7 exact   · 2 element colour(s) match no token
   ? #201e1e on .ask background-color — no Figma token
 ```
 
+A `tokenMap` entry takes three forms:
+
+| Form | Meaning |
+|---|---|
+| `'ink/500'` | a Figma variable, compared as hex |
+| `{ color, alpha, over: 'ink/500' }` | translucent fill composited over a base token, compared as the resulting flat hex |
+| `{ color, alpha }` | translucent value compared as rgba, channel for channel |
+
+The composite form exists because parts of the design are specified as a
+translucent fill over another token, so the colour they render exists nowhere as
+a variable. The sidebar is `#F6F3F3` at 1% over `#080808`, which composites to
+`(10.38, 10.35, 10.35)` → `#0a0a0a`. The app hardcodes `#0a0a09` — a
+hand-flattened approximation with the blue channel rounded down — and the audit
+now catches it:
+
+```
+tokens   1 mismatched
+  ✗ --sidebar should be #F6F3F3 @1% over ink/500
+    app #0a0a09  expected #0a0a0a  Δ(0,0,-1)  (value differs)
+```
+
 Figma values come from `visual-diff/figma/<screen>.variables.json`; refresh with
 the Figma MCP `get_variable_defs` and paste into that file. If a screen has no
 variables file the `everything` one is borrowed and the report says so.
