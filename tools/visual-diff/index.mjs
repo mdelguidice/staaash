@@ -26,7 +26,7 @@ import { pathToFileURL } from 'node:url'
 import sharp from 'sharp'
 import {
   REPO, c, die, withApp, toRaw, scorePixels, cropRaw, panelSheet, resolveAppEnv,
-  stableScreenshot
+  stableScreenshot, sampleFlatColors
 } from './lib.mjs'
 
 const argv = process.argv.slice(2)
@@ -192,6 +192,102 @@ async function calibrateScreen(screen, cfg, configDir) {
     const changes = mismatched ? await describeChanges(page, mask, W, H, scale) : []
     return { first, second, mask, mismatched, total, percent, changes, settled }
   })
+}
+
+/** CSS properties pulled off each RECT_SELECTORS element for the token audit. */
+const STYLE_PROPS = [
+  'color', 'background-color', 'border-top-color', 'border-bottom-color',
+  'border-left-color', 'border-right-color', 'font-family', 'font-size',
+  'font-weight', 'border-radius', 'padding'
+]
+
+const normHex = (v) => {
+  if (!v) return null
+  const s = String(v).trim().toLowerCase()
+  let m = /^#([0-9a-f]{6})$/.exec(s)
+  if (m) return `#${m[1]}`
+  m = /^#([0-9a-f]{3})$/.exec(s)
+  if (m) return '#' + m[1].split('').map((ch) => ch + ch).join('')
+  m = /^rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)(?:[,\s/]+([\d.]+))?/.exec(s)
+  if (m) {
+    // A fully transparent background is not a colour — reporting rgba(0,0,0,0)
+    // as "#000000 matches no token" would be a false positive on every element
+    // that simply inherits its background.
+    if (m[4] !== undefined && parseFloat(m[4]) === 0) return null
+    return '#' + [1, 2, 3].map((i) => (+m[i]).toString(16).padStart(2, '0')).join('')
+  }
+  return null
+}
+
+/** Read :root custom properties and per-element computed styles from the page. */
+async function collectStyles(page, selectors, varNames) {
+  return page.evaluate(
+    ({ sels, props, vars }) => {
+      const rootCS = getComputedStyle(document.documentElement)
+      const tokens = Object.fromEntries(
+        vars.map((v) => [v, rootCS.getPropertyValue(v).trim() || null])
+      )
+      const elements = {}
+      for (const sel of sels) {
+        const el = document.querySelector(sel)
+        if (!el) { elements[sel] = null; continue }
+        const cs = getComputedStyle(el)
+        elements[sel] = Object.fromEntries(props.map((p) => [p, cs.getPropertyValue(p).trim()]))
+      }
+      return { tokens, elements }
+    },
+    { sels: selectors, props: STYLE_PROPS, vars: varNames }
+  )
+}
+
+/**
+ * Compare the app's design tokens against the Figma variables exactly.
+ *
+ * Deliberately independent of pixel diffing: a token can be wrong by an amount
+ * pixelmatch structurally cannot see (below ~27/255), and it can be wrong on an
+ * element that is not even visible in this frame. Reported regardless of pixel
+ * impact, which is the point.
+ */
+function auditTokens(styles, figmaVars, tokenMap) {
+  const mapped = []
+  for (const [cssVar, figmaName] of Object.entries(tokenMap || {})) {
+    const appRaw = styles.tokens[cssVar]
+    const figRaw = figmaVars[figmaName]
+    const appHex = normHex(appRaw)
+    const figHex = normHex(figRaw)
+    mapped.push({
+      cssVar, figmaToken: figmaName,
+      app: appRaw ?? null, figma: figRaw ?? null,
+      match: !!appHex && !!figHex && appHex === figHex,
+      reason: !figRaw ? 'figma token not found'
+        : !appRaw ? 'css var not defined'
+        : !appHex || !figHex ? 'not a comparable colour'
+        : appHex === figHex ? null : 'value differs'
+    })
+  }
+
+  // Every colour actually painted by the probed elements, matched back to a
+  // token by value. Anything unmatched is a hardcoded or drifted colour.
+  const byValue = new Map()
+  for (const [name, val] of Object.entries(figmaVars)) {
+    const h = normHex(val)
+    if (h && !byValue.has(h)) byValue.set(h, name)
+  }
+  const unmatched = []
+  for (const [sel, props] of Object.entries(styles.elements)) {
+    if (!props) continue
+    for (const [prop, val] of Object.entries(props)) {
+      if (!prop.includes('color')) continue
+      const h = normHex(val)
+      if (!h) continue // transparent / currentColor / non-colour
+      if (!byValue.has(h)) unmatched.push({ selector: sel, property: prop, value: h })
+    }
+  }
+
+  const usedTokens = new Set(Object.values(tokenMap || {}))
+  const unusedFigmaTokens = Object.keys(figmaVars).filter((n) => !usedTokens.has(n))
+
+  return { mapped, unmatched, unusedFigmaTokens }
 }
 
 /** Score every configured region between two raw RGBA buffers. */
@@ -400,96 +496,218 @@ async function main() {
     }
 
     // ── default: diff against Figma ──────────────────────────────────────────
-    const ref = await getFigmaRef(screen, cfg.figma, flag('refresh'))
-    process.stdout.write(`    figma  ${c.dim(ref.source)}\n`)
-
-    const { png: shotPng, settled, settledAfter } = await withApp(
-      { cfg, screen, configDir },
-      async ({ page, settled }) => {
-        const s = await stableScreenshot(page)
-        return { png: s.png, settled, settledAfter: s.settledAfter }
-      }
-    )
-    if (!settledAfter) {
-      console.warn(c.yellow('    ! page never stopped repainting — score may not be reproducible'))
+    const cachedRef = join(REF_DIR, `${screen.id}@${scale}x.png`)
+    const hasNode = screen.figmaNodeId != null
+    let ref = null
+    if (hasNode || existsSync(cachedRef)) {
+      ref = await getFigmaRef(screen, cfg.figma, flag('refresh'))
+      process.stdout.write(`    figma    ${c.dim(ref.source)}\n`)
+    } else {
+      process.stdout.write(
+        `    figma    ${c.yellow('no reference')} ${c.dim('(figmaNodeId is null — pixel delta skipped)')}\n`
+      )
     }
-    const figmaPng = await readFile(ref.path)
 
-    const a = await toRaw(figmaPng, W, H)
-    const b = await toRaw(shotPng, W, H)
-    if (a.resampled) console.warn(c.yellow(`    ! figma ref was ${a.from}, resampled to ${W}×${H}`))
-    if (b.resampled) console.warn(c.yellow(`    ! app shot was ${b.from}, resampled to ${W}×${H}`))
+    // Capture twice, in two separate launches. A delta is only worth reporting
+    // if the capture it came from is reproducible, so disagreement is fatal for
+    // that screen rather than a footnote.
+    const captureOnce = () =>
+      withApp({ cfg, screen, configDir }, async ({ page, settled }) => {
+        const shot = await stableScreenshot(page)
+        const styles = await collectStyles(page, RECT_SELECTORS, Object.keys(cfg.tokenMap || {}))
+        return { png: shot.png, settled, settledAfter: shot.settledAfter, styles }
+      })
 
-    const { diff, mismatched, total, percent } = scorePixels(a.data, b.data, W, H, cfg.defaults)
+    const capA = await captureOnce()
+    let agreement = { captures: 1, identical: null, diffPixels: null }
 
-    const regions = []
-    for (const r of screen.regions || []) {
-      const rx = r.x * scale, ry = r.y * scale
-      const rw = Math.min(r.width * scale, W - rx)
-      const rh = Math.min(r.height * scale, H - ry)
-      if (rw <= 0 || rh <= 0) {
-        console.warn(c.yellow(`    ! region "${r.name}" falls outside the frame — skipped`))
+    if (!flag('single-capture')) {
+      const capB = await captureOnce()
+      const identical = capA.png.equals(capB.png)
+      let diffPixels = 0
+      if (!identical) {
+        const ra = await toRaw(capA.png, W, H)
+        const rb = await toRaw(capB.png, W, H)
+        diffPixels = scorePixels(ra.data, rb.data, W, H, cfg.defaults).mismatched
+      }
+      agreement = { captures: 2, identical, diffPixels }
+      process.stdout.write(
+        `    capture  ${identical ? c.green('2/2 identical') : c.red(`2 captures DISAGREE (${diffPixels.toLocaleString()} px)`)}\n`
+      )
+      if (!identical) {
+        failed = true
+        process.stdout.write(
+          `    ${c.red('refusing to report a delta for this screen')} ` +
+            `${c.dim('— run --calibrate to see what moved')}\n\n`
+        )
+        results.push({
+          id: screen.id,
+          figmaNodeId: screen.figmaNodeId ?? null,
+          frame: screen.frame,
+          window: { requested: [width, height], settled: capA.settled },
+          captureAgreement: agreement,
+          diffPercent: null,
+          skipped: 'captures disagreed'
+        })
         continue
       }
-      const s = scorePixels(cropRaw(a.data, W, rx, ry, rw, rh), cropRaw(b.data, W, rx, ry, rw, rh), rw, rh, cfg.defaults)
-      regions.push({
-        name: r.name, diffPixels: s.mismatched, totalPixels: s.total,
-        diffPercent: +s.percent.toFixed(3)
-      })
     }
 
-    const paths = {
-      figma: join(OUT_DIR, `${screen.id}.figma.png`),
-      shot: join(OUT_DIR, `${screen.id}.app.png`),
-      diff: join(OUT_DIR, `${screen.id}.diff.png`),
-      sideBySide: join(OUT_DIR, `${screen.id}.side-by-side.png`)
+    const shotPng = capA.png
+    const settled = capA.settled
+    const settledAfter = capA.settledAfter
+    if (!settledAfter) {
+      console.warn(c.yellow('    ! page never stopped repainting'))
     }
-    const diffPng = await sharp(diff, { raw: { width: W, height: H, channels: 4 } }).png().toBuffer()
 
-    await writeFile(paths.figma, figmaPng)
-    await writeFile(paths.shot, shotPng)
-    await writeFile(paths.diff, diffPng)
-    await writeFile(
-      paths.sideBySide,
-      await panelSheet(
-        [
-          { title: 'Figma', sub: `node ${screen.figmaNodeId}`, buf: figmaPng },
-          { title: 'App', sub: `${width}×${height}`, buf: shotPng },
-          { title: 'Delta', sub: `${percent.toFixed(2)}% of pixels differ`, buf: diffPng }
-        ],
-        W, H
+    // ── pixel delta (only possible with a reference) ─────────────────────────
+    let percent = null, mismatched = null, total = null
+    let regions = []
+    let colourCheck = []
+    let resampled = null
+    let paths = null
+
+    if (ref) {
+      const figmaPng = await readFile(ref.path)
+      const a = await toRaw(figmaPng, W, H)
+      const b = await toRaw(shotPng, W, H)
+      if (a.resampled) console.warn(c.yellow(`    ! figma ref was ${a.from}, resampled to ${W}×${H}`))
+      if (b.resampled) console.warn(c.yellow(`    ! app shot was ${b.from}, resampled to ${W}×${H}`))
+      resampled = {
+        figma: { resampled: a.resampled, source: a.from },
+        app: { resampled: b.resampled, source: b.from }
+      }
+
+      const scored = scorePixels(a.data, b.data, W, H, cfg.defaults)
+      percent = scored.percent; mismatched = scored.mismatched; total = scored.total
+      regions = scoreRegions(a.data, b.data, screen, W, H, scale, cfg.defaults)
+
+      // Exact colour comparison, independent of pixelmatch's threshold.
+      //
+      // Split by magnitude. A small delta on a flat fill is a genuine colour
+      // drift — and below ~27/255 pixelmatch structurally cannot see it, which
+      // is the whole reason this check exists. A large delta means the two
+      // images simply have different things at that point (a card edge landing
+      // elsewhere), which the pixel delta already reports; counting those as
+      // "colour" findings would bury the signal.
+      const DRIFT_MAX = 8
+      for (const r of screen.regions || []) {
+        const s = sampleFlatColors(a.data, b.data, W, H, r, scale)
+        const nonZero = s.pairs.filter((p) => p.maxDelta > 0)
+        colourCheck.push({
+          name: r.name,
+          flatSamples: s.flatPoints,
+          exactSamples: s.exactMatches,
+          drift: nonZero.filter((p) => p.maxDelta <= DRIFT_MAX).slice(0, 8),
+          structuralPairs: nonZero.filter((p) => p.maxDelta > DRIFT_MAX).length
+        })
+      }
+
+      paths = {
+        figma: join(OUT_DIR, `${screen.id}.figma.png`),
+        shot: join(OUT_DIR, `${screen.id}.app.png`),
+        diff: join(OUT_DIR, `${screen.id}.diff.png`),
+        sideBySide: join(OUT_DIR, `${screen.id}.side-by-side.png`)
+      }
+      const diffPng = await sharp(scored.diff, { raw: { width: W, height: H, channels: 4 } })
+        .png().toBuffer()
+      await writeFile(paths.figma, figmaPng)
+      await writeFile(paths.shot, shotPng)
+      await writeFile(paths.diff, diffPng)
+      await writeFile(
+        paths.sideBySide,
+        await panelSheet(
+          [
+            { title: 'Figma', sub: `node ${screen.figmaNodeId}`, buf: figmaPng },
+            { title: 'App', sub: `${width}×${height}`, buf: shotPng },
+            { title: 'Delta', sub: `${percent.toFixed(2)}% of pixels differ`, buf: diffPng }
+          ],
+          W, H
+        )
       )
-    )
 
-    const tint = percent < 2 ? c.green : percent < 10 ? c.yellow : c.red
-    process.stdout.write(
-      `    delta  ${tint(`${percent.toFixed(2)}%`)} ` +
-        `${c.dim(`(${mismatched.toLocaleString()} / ${total.toLocaleString()} px)`)}\n`
-    )
-    for (const r of regions) {
-      const t = r.diffPercent < 2 ? c.green : r.diffPercent < 10 ? c.yellow : c.red
-      process.stdout.write(`      ${r.name.padEnd(10)} ${t(`${r.diffPercent.toFixed(2)}%`)}\n`)
+      const tint = percent < 2 ? c.green : percent < 10 ? c.yellow : c.red
+      process.stdout.write(
+        `    delta    ${tint(`${percent.toFixed(2)}%`)} ` +
+          `${c.dim(`(${mismatched.toLocaleString()} / ${total.toLocaleString()} px)`)}\n`
+      )
+      for (const r of regions) {
+        const t = r.diffPercent < 2 ? c.green : r.diffPercent < 10 ? c.yellow : c.red
+        process.stdout.write(`      ${r.name.padEnd(10)} ${t(`${r.diffPercent.toFixed(2)}%`)}\n`)
+      }
+      for (const cc of colourCheck) {
+        const head = `${cc.exactSamples.toLocaleString()}/${cc.flatSamples.toLocaleString()} exact`
+        const drift = cc.drift.length
+          ? c.red(
+              '  drift ' +
+                cc.drift.slice(0, 3).map((d) => `${d.figma}→${d.app} Δ${d.maxDelta}(×${d.samples})`).join(' ')
+            )
+          : c.green('  no drift')
+        const struct = cc.structuralPairs
+          ? c.dim(`  · ${cc.structuralPairs} structural`)
+          : ''
+        process.stdout.write(
+          `      ${c.dim('colour')} ${cc.name.padEnd(9)} ${c.dim(head)}${drift}${struct}\n`
+        )
+      }
+    } else {
+      await writeFile(join(OUT_DIR, `${screen.id}.app.png`), shotPng)
+      paths = { shot: join(OUT_DIR, `${screen.id}.app.png`) }
     }
-    process.stdout.write(`    ${c.dim(`→ ${relative(REPO, paths.sideBySide)}`)}\n\n`)
+
+    // ── token audit (independent of pixels, runs with or without a reference) ─
+    const varsPath = [
+      join(REF_DIR, `${screen.id}.variables.json`),
+      join(REF_DIR, 'everything.variables.json')
+    ].find((p2) => existsSync(p2))
+    let tokenAudit = null
+    if (varsPath && cfg.tokenMap) {
+      const figmaVars = JSON.parse(await readFile(varsPath, 'utf8')).variables || {}
+      tokenAudit = auditTokens(capA.styles, figmaVars, cfg.tokenMap)
+      tokenAudit.source = relative(REPO, varsPath)
+      tokenAudit.borrowed = !varsPath.endsWith(`${screen.id}.variables.json`)
+      const bad = tokenAudit.mapped.filter((m) => !m.match)
+      process.stdout.write(
+        `    tokens   ${bad.length === 0 ? c.green(`${tokenAudit.mapped.length}/${tokenAudit.mapped.length} exact`) : c.red(`${bad.length} mismatched`)}` +
+          `${c.dim(`  · ${tokenAudit.unmatched.length} element colour(s) match no token`)}` +
+          `${tokenAudit.borrowed ? c.dim(' · vars borrowed from everything') : ''}\n`
+      )
+      for (const m of bad) {
+        process.stdout.write(
+          `      ${c.red('✗')} ${m.cssVar} ${c.dim('vs')} ${m.figmaToken}  ` +
+            `app ${m.app ?? '—'}  figma ${m.figma ?? '—'}  ${c.dim(`(${m.reason})`)}\n`
+        )
+      }
+      for (const u of tokenAudit.unmatched.slice(0, 8)) {
+        process.stdout.write(
+          `      ${c.yellow('?')} ${u.value} ${c.dim(`on ${u.selector} ${u.property} — no Figma token`)}\n`
+        )
+      }
+    }
+
+    if (paths?.sideBySide) {
+      process.stdout.write(`    ${c.dim(`→ ${relative(REPO, paths.sideBySide)}`)}\n`)
+    }
+    process.stdout.write('\n')
 
     results.push({
       id: screen.id,
-      figmaNodeId: screen.figmaNodeId,
+      figmaNodeId: screen.figmaNodeId ?? null,
       frame: screen.frame,
       route: screen.route?.description ?? null,
       window: { requested: [width, height], settled },
       settledAfterFrames: settledAfter,
+      captureAgreement: agreement,
       capture: { width: W, height: H, scale },
-      resampled: {
-        figma: { resampled: a.resampled, source: a.from },
-        app: { resampled: b.resampled, source: b.from }
-      },
+      resampled,
       diffPixels: mismatched,
       totalPixels: total,
-      diffPercent: +percent.toFixed(3),
+      diffPercent: percent === null ? null : +percent.toFixed(3),
       regions,
-      referenceSource: ref.source,
-      artifacts: Object.fromEntries(Object.entries(paths).map(([k, v]) => [k, relative(REPO, v)]))
+      colourCheck,
+      tokenAudit,
+      referenceSource: ref?.source ?? null,
+      artifacts: Object.fromEntries(Object.entries(paths || {}).map(([k, v]) => [k, relative(REPO, v)]))
     })
   }
 
@@ -513,6 +731,13 @@ async function main() {
   }
   await writeFile(join(OUT_DIR, 'report.json'), JSON.stringify(report, null, 2) + '\n')
   console.log(`  ${c.dim(`report → ${relative(REPO, join(OUT_DIR, 'report.json'))}`)}\n`)
+
+  if (failed) {
+    console.error(
+      `  ${c.red('one or more screens had disagreeing captures — their deltas were withheld')}\n`
+    )
+    process.exit(1)
+  }
 }
 
 main().catch((err) => die(err.stack || err.message))

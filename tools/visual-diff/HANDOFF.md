@@ -161,9 +161,10 @@ without touching app code.
   immune to longer waits, identical within a process but divergent across
   processes. Fixed by not passing `HOME`.
 
-  Recorded negative result, do not retry: fractional column width was the
-  leading hypothesis and is wrong. Ten calibrations at each of four widths
-  (re-seeding per width) gave 14/20 clean at integral colW vs 13/20 fractional.
+  Fractional column width was the leading hypothesis. It is **untested, not
+  disproven** — the ten-calibrations-per-width sweep that appeared to rule it out
+  was confounded by the dialog and measured nothing about column geometry.
+  Re-run it against a clean baseline if the question ever matters again.
 
 - **Fixture timestamps are relative to seed time.** `"2 days ago"` labels drift
   once the fixture ages past a boundary. Re-seed. No staleness warning is

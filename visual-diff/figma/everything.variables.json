@@ -1,0 +1,30 @@
+{
+  "_source": "Figma MCP get_variable_defs, file yPHeCTtyigj5XqiReFv8NW, node 5181-38",
+  "_refresh": "Re-run get_variable_defs for the node and paste the result into `variables` below.",
+  "variables": {
+    "text/muted": "#494949",
+    "acid/950": "#040d00",
+    "acid/900": "#0d1d00",
+    "acid/600": "#b9e900",
+    "button/primary/background/hover": "#ccff00",
+    "electric lime/50": "#faffe6",
+    "acid/50": "#f5ffe1",
+    "icon/muted": "#494949",
+    "electric lime/100": "#f1ffb8",
+    "cod gray/300": "#383434",
+    "rose/500": "#f43f5e",
+    "coral/500": "#fb6b4d",
+    "tangerine/500": "#f59e0b",
+    "moss/500": "#5ba744",
+    "teal/500": "#14b8a6",
+    "space-50": "4",
+    "acid/500": "#ccff00",
+    "acid/300": "#d7ff6e",
+    "mist/300": "#e0e0e0",
+    "mist/800": "#414141",
+    "button/primary/background/default": "#ccff001a",
+    "stroke/emphasis": "#b9e9001a",
+    "radius-150": "12",
+    "ink/500": "#080808"
+  }
+}

@@ -103,22 +103,92 @@ export default {
         // y=730, so the ask bar is not counted twice.
         { name: 'gallery', x: 264, y: 70, width: 1176, height: 660 }
       ]
-    }
+    },
 
-    // To add a screen, copy the block above. Example — the settings overlay:
-    //
-    // {
-    //   id: 'settings',
-    //   figmaNodeId: '0000-000',            // ← the real node id from Figma
-    //   frame: { width: 1440, height: 792 },
-    //   route: {
-    //     description: 'Settings overlay open',
-    //     steps: [
-    //       { waitFor: '.masonry' },
-    //       { click: '[aria-label="Open settings"]' },
-    //       { waitFor: '.overlay' }
-    //     ]
-    //   }
-    // }
-  ]
+    {
+      id: 'settings',
+
+      // UNKNOWN. The Figma MCP only exposes this file's Cover page, so the node
+      // id for the settings frame could not be discovered — and guessing one
+      // would produce a confidently wrong reference. Fill it in and the Figma
+      // delta starts working; until then this screen still runs calibration,
+      // the exact colour check and the token audit.
+      figmaNodeId: null,
+
+      frame: { width: 1440, height: 792 },
+
+      route: {
+        description: 'Settings overlay open, over the Everything gallery.',
+        steps: [
+          { waitFor: '.masonry' },
+          { click: '[aria-label="Open settings"]' },
+          { waitFor: '.modal' }
+        ]
+      },
+
+      // Measured with --rects against this screen's own route, not guessed.
+      regions: [
+        { name: 'sidebar', x: 0, y: 0, width: 264, height: 792 },
+        { name: 'modal', x: 480, y: 175, width: 480, height: 443 },
+        // Scrim + everything behind it, to catch dimming/blur regressions.
+        { name: 'scrim', x: 0, y: 0, width: 1440, height: 792 }
+      ]
+    },
+
+    {
+      id: 'drawer-open',
+      figmaNodeId: null, // UNKNOWN — see the note on `settings` above
+      frame: { width: 1440, height: 792 },
+
+      route: {
+        description:
+          'Bookmark drawer open, opened from the first card in the gallery. ' +
+          'Uses nth-child rather than a data-card-id so it works against the ' +
+          'real library as well as the fixture.',
+        steps: [
+          { waitFor: '.masonry' },
+          { click: '.masonry-item:nth-child(1) .card' },
+          { waitFor: '.drawer.is-open' },
+          // The sheet rises with a 480ms expo transition; let it land before
+          // the stabilise pass freezes transitions mid-flight.
+          { wait: 900 }
+        ]
+      },
+
+      // Measured with --rects against this screen's own route, not guessed.
+      // The sheet is 753 tall from y=63, so it bleeds 24px past the viewport by
+      // design; the harness clamps the region to the frame.
+      regions: [
+        { name: 'sidebar', x: 0, y: 0, width: 264, height: 792 },
+        { name: 'drawer', x: 410, y: 63, width: 620, height: 753 },
+        { name: 'scrim', x: 0, y: 0, width: 1440, height: 792 }
+      ]
+    }
+  ],
+
+  /**
+   * App CSS custom property → Figma variable name.
+   *
+   * Checked exactly, by value, regardless of whether the difference is visible:
+   * pixelmatch cannot see a colour drift below ~27/255, so token audits catch
+   * what pixel diffing structurally cannot.
+   *
+   * These pairings come from the app's own source comments in styles.css —
+   * where `--canvas: #080808` is annotated "ink/500" — i.e. author intent
+   * rather than inference on my part.
+   * Figma values are read from visual-diff/figma/<screen>.variables.json —
+   * refresh that file with the Figma MCP `get_variable_defs`.
+   *
+   * Add pairs as you map more of the system. Unmapped app vars and unused Figma
+   * tokens are both reported, so the gaps stay visible.
+   */
+  tokenMap: {
+    '--canvas': 'ink/500',
+    '--text': 'acid/50',
+    '--muted': 'text/muted',
+    '--volt': 'acid/500',
+    '--volt-deep': 'acid/600',
+    '--ink-on-volt': 'acid/950',
+    '--ink-on-volt-badge': 'acid/900'
+  }
 }

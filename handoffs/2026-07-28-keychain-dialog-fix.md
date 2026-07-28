@@ -118,10 +118,10 @@ drift ~10% of the 0–255 range and score exactly 0.000%.
 - **A focus-stealing modal is a plausible cause for any bistable screenshot
   diff.** It presents as "two stable states" rather than noise, and is immune to
   longer waits — which is exactly what makes it look like a rendering problem.
-- **Fractional column width is a dead hypothesis.** Ten calibrations at each of
-  four viewport widths (re-seeding the fixture per width) gave 14/20 clean at
-  integral `colW` vs 13/20 fractional. It was indistinguishable because the
-  experiment was measuring the dialog. Do not retry it.
+- **Fractional column width is UNTESTED, not disproven.** The ten-calibrations-
+  per-width sweep (14/20 integral vs 13/20 fractional) was confounded by the
+  dialog — it measured focus-change variance, not column geometry, so it is not
+  evidence either way. Re-run it against the now-clean baseline if it matters.
 
 ---
 

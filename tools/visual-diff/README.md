@@ -45,7 +45,70 @@ For every screen in [`visual-diff.config.mjs`](../../visual-diff.config.mjs):
 | `--refresh` | re-fetch references from Figma even if cached |
 | `--frame=WxH` | override the capture viewport (calibrate / mutate only) |
 | `--mutate=<sel>:<prop>:<val>` | inject a style override and score it (repeatable) |
+| `--single-capture` | capture once instead of twice (skips the agreement check) |
 | `--config=<path>` | use a different config file |
+
+## Every run captures twice
+
+A delta is only worth reporting if the capture it came from is reproducible, so
+each screen is captured in **two independent launches** and the two are compared
+before anything is scored. If they disagree, the harness **refuses to report a
+delta for that screen**, records the disagreement, carries on with the remaining
+screens, and exits non-zero.
+
+`report.json` records the outcome per screen:
+
+```json
+"captureAgreement": { "captures": 2, "identical": true, "diffPixels": 0 }
+```
+
+`--single-capture` opts out when you want speed over certainty. `--calibrate`
+remains the explicit gate — it additionally names *what* moved.
+
+## Exact colour check
+
+pixelmatch cannot see a flat-colour drift below ~27/255 (see Sensitivity). That
+is a structural blind spot, not a tuning choice, so colour is also checked
+directly and independently.
+
+For each region the harness walks a grid, keeps only points whose 5×5
+neighbourhood is a single uniform colour in **both** images — flat interior, no
+text or edges — and reports the exact RGB difference there. Findings are split
+by magnitude:
+
+- **drift** (Δ ≤ 8) — a genuine colour difference on a flat fill, almost always
+  invisible to the pixel delta. This is the signal.
+- **structural** (Δ > 8) — the two images simply have different content at that
+  point. The pixel delta already reports that; it is counted, not listed.
+
+```
+colour sidebar   783/44,281 exact   drift #0a0a0a→#0a0a09 Δ1(×42230)   · 20 structural
+```
+
+That line is a real finding: the design paints the sidebar `#0a0a0a`, the app
+paints `#0a0a09`. It covers ~42k sampled points and scores **0.000%** in the
+pixel delta.
+
+## Token audit
+
+Independent of pixels entirely — a token can be wrong by an amount nothing can
+see, and still be wrong. For every pair in the config's `tokenMap`, the app's
+computed `:root` custom property is compared **exactly** against the Figma
+variable:
+
+```
+tokens   7/7 exact   · 2 element colour(s) match no token
+  ? #0a0a09 on .sb background-color — no Figma token
+  ? #201e1e on .ask background-color — no Figma token
+```
+
+Figma values come from `visual-diff/figma/<screen>.variables.json`; refresh with
+the Figma MCP `get_variable_defs` and paste into that file. If a screen has no
+variables file the `everything` one is borrowed and the report says so.
+
+Colours painted by the probed elements that match **no** Figma token are listed
+too — those are hardcoded or drifted values. Fully transparent backgrounds are
+correctly ignored rather than reported as `#000000`.
 
 ## Mutation testing — `--mutate`
 
@@ -190,11 +253,12 @@ precondition instead of trusting it.
 Result: **16/16 consecutive clean calibrations**, against ~4/5 before. At the old
 failure rate that streak has probability ≈ 0.003.
 
-### Recorded negative result: fractional column width
+### Untested (not disproven): fractional column width
 
 Before the real cause was found, the leading hypothesis was fractional column
-width forcing image resampling. **It was tested and is wrong** — recorded here so
-nobody retries it. `colW` is
+width forcing image resampling. The experiment below **was confounded by the
+keychain dialog and therefore proves nothing** — it measured dialog-induced
+variance, not column geometry. The hypothesis remains **untested**. `colW` is
 `(viewportW − 344) / 3`, integral when `viewportW % 3 == 2`. Ten calibrations at
 each of four widths, re-seeding the fixture at each so card crops matched the
 layout:
@@ -206,10 +270,13 @@ layout:
 | 1439 | 365 | integral | 8/10 | 2,976 px |
 | 1440 | 365.333 | fractional | 6/10 | 3,621 px |
 
-Integral 14/20 clean vs fractional 13/20 — indistinguishable. The per-width
-residual magnitudes (2,471 / 6,846 / 2,976 / 3,621 px) simply reflect how much
-content the dialog's focus change affected at each width. Do not make the column
-width integral on the strength of this idea; it buys nothing.
+Integral 14/20 clean vs fractional 13/20. That null result is **not evidence
+about column width** — every run in the table was contaminated by the dialog,
+whose focus change dominated the signal. The per-width magnitudes (2,471 / 6,846
+/ 2,976 / 3,621 px) just reflect how much content the focus change touched at
+each width. To actually test the hypothesis, re-run this sweep now that
+calibration is clean; if every width scores 0.00%, column width was never
+implicated either way.
 
 Any calibration above 0.00% is now a real regression. Read the element list.
 

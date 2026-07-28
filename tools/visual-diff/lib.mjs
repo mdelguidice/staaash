@@ -4,7 +4,7 @@
  * images. Nothing here writes to app code or to the real user data directory.
  */
 import { existsSync, readFileSync, rmSync } from 'node:fs'
-import { execFileSync } from 'node:child_process'
+import { tmpdir } from 'node:os'
 import { join, dirname, resolve, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { _electron as electron } from 'playwright-core'
@@ -71,34 +71,29 @@ export function resolveAppEnv(cfg, configDir) {
   // ~/staaash/.cache/data.json and importing the real library into a fixture.
   // That is unnecessary: the seeder sets `migrated_v1`, so the guard in
   // src/main/migrate.js short-circuits before it looks at HOME at all.
-  // assertFixtureSafe() below enforces that rather than trusting it.
+  // The shim's fixture precheck enforces that rather than trusting it.
   delete env.HOME
 
   return { env, appData: join(home, 'Library', 'Application Support'), fixtureHome: home }
 }
 
 /**
- * Refuse to launch against a fixture whose `migrated_v1` flag is unset.
- *
- * Without it the app would run its one-time legacy migration and import the
- * real library into the fixture — silently making every score meaningless.
- * This is the precondition that lets us leave HOME alone (see above).
+ * Where the shim records the result of its fixture precheck. The check itself
+ * runs inside Electron (see electron-shim/main.mjs) because better-sqlite3 is
+ * built for Electron's ABI and the system sqlite3 has no FTS5 — neither can be
+ * used from this process. It fails CLOSED: an unverifiable fixture is refused.
  */
-export function assertFixtureSafe(dbPath) {
-  let out
+export const PRECHECK_PATH = join(tmpdir(), 'staaash-vd-precheck.json')
+
+/** Turn a refused launch into the shim's own explanation, not a stack trace. */
+export function explainLaunchFailure(err) {
   try {
-    out = execFileSync('sqlite3', ['-readonly', dbPath, "SELECT value FROM settings WHERE key='migrated_v1'"],
-      { encoding: 'utf8' })
+    const r = JSON.parse(readFileSync(PRECHECK_PATH, 'utf8'))
+    if (r && r.ok === false) die(`Fixture precheck refused the launch.\n\n  ${r.reason}`)
   } catch {
-    return // no sqlite3, or unreadable — not worth blocking the run over
+    /* no precheck record — fall through to the raw error */
   }
-  if (!out.trim()) {
-    die(
-      `Fixture at\n    ${dbPath}\n  has no migrated_v1 flag.\n\n` +
-        `  Launching it would run the legacy migration and pull your real\n` +
-        `  library into the fixture. Re-seed:  node tools/visual-diff/seed-fixture.mjs`
-    )
-  }
+  die(err.stack || err.message)
 }
 
 /**
@@ -199,10 +194,13 @@ export async function withApp({ cfg, screen, configDir, skipSteps = false, extra
   // configured we launch the app directly and it uses the real library.
   const useShim = !!appData
   if (appData) {
-    assertFixtureSafe(join(appData, 'staaash', 'staaash.db'))
     resetVolatileState(join(appData, 'staaash'))
+    rmSync(PRECHECK_PATH, { force: true }) // never read a stale verdict
   }
-  const app = await electron.launch({
+
+  let app
+  try {
+    app = await electron.launch({
     executablePath: electronBinary(appDir),
     // Pinning the scale factor makes the capture resolution host-independent,
     // so a 1440pt frame always lands on 1440*scale device pixels.
@@ -215,9 +213,19 @@ export async function withApp({ cfg, screen, configDir, skipSteps = false, extra
     env: {
       ...process.env,
       ...env,
-      ...(useShim ? { STAAASH_VD_APPDATA: appData, STAAASH_VD_MAIN: mainEntry } : {})
+      ...(useShim
+        ? {
+            STAAASH_VD_APPDATA: appData,
+            STAAASH_VD_MAIN: mainEntry,
+            STAAASH_VD_DESKTOP: appDir,
+            STAAASH_VD_PRECHECK: PRECHECK_PATH
+          }
+        : {})
     }
-  })
+    })
+  } catch (err) {
+    explainLaunchFailure(err)
+  }
 
   try {
     const page = await app.firstWindow()
@@ -431,4 +439,71 @@ export async function panelSheet(panels, w, h) {
     ])
     .png()
     .toBuffer()
+}
+
+// ─── exact colour sampling ───────────────────────────────────────────────────
+
+const hex = (r, g, b) => '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('')
+
+/**
+ * Compare flat fills exactly, independent of pixelmatch.
+ *
+ * pixelmatch only counts a pixel once its YIQ distance clears
+ * 35215*threshold^2 — for a neutral grey that is a delta above ~26 of 255, so a
+ * flat colour can drift ~10% and still score 0.000%. This walks a grid inside
+ * each region, keeps only points whose (2r+1)^2 neighbourhood is a single
+ * uniform colour in BOTH images — i.e. flat interior, no text or edges — and
+ * reports the exact RGB difference there.
+ *
+ * Returns the distinct colour pairs found, commonest first.
+ */
+export function sampleFlatColors(aData, bData, W, H, region, scale, { step = 4, radius = 2 } = {}) {
+  const x0 = Math.max(0, region.x * scale)
+  const y0 = Math.max(0, region.y * scale)
+  const x1 = Math.min(W, x0 + region.width * scale)
+  const y1 = Math.min(H, y0 + region.height * scale)
+
+  /** Uniform colour of the window centred on (x,y), or null if not uniform. */
+  const uniform = (buf, x, y) => {
+    const at = ((y * W) + x) * 4
+    const r = buf[at], g = buf[at + 1], b = buf[at + 2]
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        const i = (((y + dy) * W) + (x + dx)) * 4
+        if (buf[i] !== r || buf[i + 1] !== g || buf[i + 2] !== b) return null
+      }
+    }
+    return [r, g, b]
+  }
+
+  const pairs = new Map()
+  let flatPoints = 0
+  for (let y = y0 + radius; y < y1 - radius; y += step) {
+    for (let x = x0 + radius; x < x1 - radius; x += step) {
+      const a = uniform(aData, x, y)
+      if (!a) continue
+      const b = uniform(bData, x, y)
+      if (!b) continue
+      flatPoints++
+      const key = `${hex(...a)}>${hex(...b)}`
+      const e = pairs.get(key) || {
+        figma: hex(...a),
+        app: hex(...b),
+        delta: [b[0] - a[0], b[1] - a[1], b[2] - a[2]],
+        samples: 0
+      }
+      e.samples++
+      pairs.set(key, e)
+    }
+  }
+
+  const list = [...pairs.values()]
+    .map((p) => ({ ...p, maxDelta: Math.max(...p.delta.map(Math.abs)) }))
+    .sort((m, n) => n.samples - m.samples)
+
+  return {
+    flatPoints,
+    exactMatches: list.filter((p) => p.maxDelta === 0).reduce((n, p) => n + p.samples, 0),
+    pairs: list
+  }
 }
