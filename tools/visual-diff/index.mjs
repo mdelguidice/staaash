@@ -360,6 +360,79 @@ async function collectStyles(page, selectors, varNames, extraProps = []) {
 }
 
 /**
+ * Sweep every element for text its own clip box cuts off.
+ *
+ * `overflow: hidden` is nearly always there for `text-overflow: ellipsis`, which
+ * is a HORIZONTAL intent — but overflow clips both axes, so any box whose line
+ * box is shorter than the font's ink box silently shaves the descenders off its
+ * own text. That is how `.sb-row-name` shipped with every "y" and "g" cut: the
+ * row set `line-height: 1`, giving a 14px line box for a face whose ink box at
+ * 14px is 17px.
+ *
+ * This is not a Figma comparison — the design has no opinion on a clip box, and
+ * Figma's own text node is 14px tall, so asserting the app against it would
+ * demand the bug. It is an invariant: a single-line box that clips must not have
+ * layout overflow. Content-independent (true whatever the text says) and
+ * design-determined (typography, not item counts), so it satisfies the
+ * assertion rule in the README.
+ *
+ * Scroll containers and line-clamped boxes are excluded — their overflow is the
+ * point. Runs on every screen with no spec, which is deliberate: the spec names
+ * 11 selectors and this bug was in one of them, passing 11/11.
+ */
+async function auditClipping(page) {
+  return page.evaluate(() => {
+    const out = []
+    for (const el of document.querySelectorAll('*')) {
+      const cs = getComputedStyle(el)
+      // Only a fully clipping box. auto/scroll are scrollers by intent.
+      if (cs.overflowY !== 'hidden' && cs.overflowY !== 'clip') continue
+      if (cs.display === 'none' || cs.visibility === 'hidden') continue
+      // Line clamping and deliberate multi-line truncation overflow by design.
+      if (cs.webkitLineClamp && cs.webkitLineClamp !== 'none') continue
+      if (cs.textOverflow !== 'ellipsis' && cs.whiteSpace !== 'nowrap') continue
+
+      const text = [...el.childNodes]
+        .filter((n) => n.nodeType === 3 && n.nodeValue.trim())
+        .map((n) => n.nodeValue.trim())
+        .join(' ')
+      if (!text) continue
+
+      const overflow = el.scrollHeight - el.clientHeight
+      if (overflow <= 0) continue
+
+      // A box genuinely holding more than one line is not this bug.
+      const lh = parseFloat(cs.lineHeight)
+      const inner =
+        el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom)
+      if (Number.isFinite(lh) && inner > lh + 0.5) continue
+
+      const cls =
+        typeof el.className === 'string' && el.className.trim()
+          ? '.' + el.className.trim().split(/\s+/).join('.')
+          : ''
+      out.push({
+        selector: el.tagName.toLowerCase() + cls,
+        text: text.slice(0, 40),
+        fontSize: cs.fontSize,
+        lineHeight: cs.lineHeight,
+        clientHeight: el.clientHeight,
+        scrollHeight: el.scrollHeight,
+        overflowPx: overflow
+      })
+    }
+    // One entry per selector+type; 11 sidebar rows are one defect, not eleven.
+    const byKey = new Map()
+    for (const r of out) {
+      const key = `${r.selector}|${r.fontSize}|${r.lineHeight}`
+      if (byKey.has(key)) { byKey.get(key).count++; continue }
+      byKey.set(key, { ...r, count: 1 })
+    }
+    return [...byKey.values()]
+  })
+}
+
+/**
  * Diff computed styles against properties read out of Figma.
  *
  * The token audit only covers :root variables. This covers what an element
@@ -945,7 +1018,8 @@ async function main() {
           Object.keys(cfg.tokenMap || {}),
           specProps
         )
-        return { png: shot.png, settled, settledAfter: shot.settledAfter, styles }
+        const clipping = await auditClipping(page)
+        return { png: shot.png, settled, settledAfter: shot.settledAfter, styles, clipping }
       })
 
     const stylePath = [
@@ -1177,6 +1251,21 @@ async function main() {
       }
     }
 
+    const clipping = capA.clipping ?? []
+    // An invariant, not a comparison — it needs no Figma reference and cannot be
+    // a false positive from a borrowed spec, so it fails the run outright.
+    if (clipping.length) failed = true
+    process.stdout.write(
+      `    clipping ${clipping.length === 0 ? c.green('no text clipped') : c.red(`${clipping.length} selector(s) clipping their own text`)}\n`
+    )
+    for (const f of clipping) {
+      process.stdout.write(
+        `      ${c.red('✗')} ${f.selector} ${c.dim(`${f.fontSize}/${f.lineHeight}`)}  ` +
+          `clips ${f.overflowPx}px ${c.dim(`(clientHeight ${f.clientHeight} < scrollHeight ${f.scrollHeight})`)}` +
+          `${f.count > 1 ? c.dim(` ×${f.count}`) : ''}  ${c.dim(`"${f.text}"`)}\n`
+      )
+    }
+
     if (paths?.sideBySide) {
       process.stdout.write(`    ${c.dim(`→ ${relative(REPO, paths.sideBySide)}`)}\n`)
     }
@@ -1196,6 +1285,7 @@ async function main() {
       // say which property is wrong on which element. Everything derived from
       // the pixel delta lives under `debug` — see the note on `debug` below.
       styleAudit,
+      clipAudit: clipping,
       colourCheck,
       tokenAudit,
 

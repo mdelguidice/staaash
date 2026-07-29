@@ -236,6 +236,20 @@ select {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  /* The line box has to hold the font's ink, not just its em size. This is the
+     only sidebar element that clips (overflow: hidden, for the ellipsis), and
+     the row's `line-height: 1` gave it a 14px box for a face whose ink box at
+     14px is 17px — so every descender lost its tail: "Ever_y_thin_g",
+     "T_yp_o_g_raph_y", "Readin_g_ List".
+     Nothing moves when this changes. The row is `align-items: center`, so the
+     baseline reduces to contentTop + 8 - inkBox/2 + ascent and the line-height
+     cancels out. Measured at 2x: painted ink is y=81..94 at 18px, 20px and 22px,
+     with byte-identical glyph rasters; only the clip box grows.
+     Keep it an EVEN px value. A ratio (1.4 -> 19.6px) puts the box on a
+     fractional origin, which shifts the glyph raster half a pixel up — correct
+     descender, but the whole label moves. 20px = the ink box plus 2px of slack
+     for glyphs deeper than y/g. Do NOT "tidy" this back to 1. */
+  line-height: 20px;
 }
 .sb-count {
   font-size: 10px;

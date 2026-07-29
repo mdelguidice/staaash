@@ -49,7 +49,7 @@ For every screen in [`visual-diff.config.mjs`](../../visual-diff.config.mjs):
 | `<id>.diff.png` | differing pixels, magenta over a dimmed reference |
 | `<id>.side-by-side.png` | all three panels with labels — start here |
 | `<id>.calibrate*.png` | written only when `--calibrate` fails |
-| `report.json` | style, colour and token findings; pixel numbers under `debug` |
+| `report.json` | style, clip, colour and token findings; pixel numbers under `debug` |
 | `figma/<id>@<scale>x.png` | cached reference; delete to force a re-fetch |
 
 ## Flags
@@ -148,6 +148,15 @@ rises. That is acceptable precisely because the delta is diagnostic and lives
 under `debug` — nothing gates on it — and the alternative was a harness that
 could not report reproducibly at all. The style audit reads the DOM and is
 unaffected either way.
+
+**Residual, 2026-07-29.** Neither screen is 100%. `everything` disagreed once in
+three full runs, and `settings` fails calibration at exactly **266,368 px** on
+`.modal-scrim` / `.modal` — 3 of 10 measured runs (1/5 before an unrelated CSS
+change, 2/5 after; the change was a sidebar `line-height` with no causal path to
+a scrim, and the pixel count was identical every time, so the difference is
+noise at n=5, not a regression). It scores **0.00% (120 px)** after threshold: a
+sub-threshold alpha difference across the whole scrim, never able to move a
+score. Recorded, not chased — see "Accepted, not fixing".
 
 **What the flake did and did not affect, while it lasted** — measured over six
 single-capture runs landing in both states. This is the evidence behind
@@ -394,6 +403,27 @@ not the app's.
 Withdrawn and non-assertable quantities are listed in `_notAssertable` at the
 top of the styles file, so their absence reads as a decision rather than an
 oversight.
+
+### Invariants beat comparisons where the design has no opinion
+
+Some defects the design cannot express, so no comparison can catch them. Those
+get an invariant instead — a property that must hold whatever Figma says and
+whatever the content is. Two exist:
+
+- **`_numberMatches`** — a count shown twice must agree in both places. The
+  design fixes that they agree; the content fixes what the number is.
+- **`clipAudit`** — a single-line box with a clipping `overflow` must not have
+  layout overflow. Reported per screen as `clipping`, and it **fails the run**.
+
+`clipAudit` exists because the sidebar shipped with every descender shaved off
+its nav labels — "Ever*y*thin*g*", "T*yp*o*g*raph*y*" — while the style audit
+reported 11/11 selectors matching. `overflow: hidden` is written for
+`text-overflow: ellipsis`, a horizontal intent, but it clips vertically too, and
+`.sb-row`'s `line-height: 1` gave the label a 14px line box for a face whose ink
+box at 14px is 17px. Figma could not catch it: Figma's own text node *is* 14px
+tall, so comparing the app to the design would have demanded the bug. The audit
+sweeps every element on every screen rather than the 11 the spec names — the bug
+was inside those 11 and passed anyway.
 
 ### Strokes and layout
 
@@ -750,6 +780,17 @@ independently:* the token audit passes 9/9 against `get_variable_defs`, and the
 painted value the sampler reads matches the composite. The provenance is
 recorded in the spec's `_note` so a future reader knows which assertions rest on
 a stated value rather than a queried one.
+
+**The `settings` scrim's 266,368 px calibration flake.** `.modal-scrim` composites
+to one of two values depending on the launch, differing by a single alpha level
+across its whole area. *Closed because it cannot reach any output:* it scores
+0.00% / 120 px after threshold, `settings` has no Figma reference so its pixel
+delta is skipped entirely, and the style, clip and token audits read the DOM.
+Measured at 3/10 runs with an identical pixel count every time. The `everything`
+blur hunt already established that four arms and twenty runs per arm is what it
+costs to move a flake of this kind; spending that on a difference that no score
+can see is the wrong trade. Byte-exact calibration still reports it, which is the
+behaviour we want — it is a known-quantity failure, not a silent one.
 
 ## Sensitivity — what the harness can actually see
 
