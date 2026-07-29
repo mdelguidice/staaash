@@ -109,6 +109,10 @@ export const DETERMINISM_FLAGS = [
   '--disable-lcd-text',
   '--disable-partial-raster',
   '--force-color-profile=srgb'
+  // NOT added: --num-raster-threads=1 and --disable-checker-imaging. Both were
+  // tried against the `everything` bistability (see README, "Known flake") and
+  // neither showed a reduction that survives the sample size — 1/5 and 2/6
+  // against a 4/8 baseline. Shipping either would be a fix justified by noise.
 ]
 
 /**

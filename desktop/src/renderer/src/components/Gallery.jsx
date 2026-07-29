@@ -7,7 +7,11 @@ const GAP_X = 20
 const GAP_Y = 12
 const MIN_COL_W = 300
 const MAX_COLS = 3
-const META_H = 24 // 4px gap + 20px domain chip row
+// Vertical space each card reserves below its media, and therefore the card
+// pitch the masonry accumulates. Figma's card is thumbnail + 4px gap + 24px
+// meta row (5181:232 — Thumbnail 195, Container at y=199 h=24, card 223), so
+// the reserved amount is 28, not 24. At 24 the grid ran short by 4px per card.
+const META_H = 28 // 4px gap + 24px domain chip row
 
 export default function Gallery({
   items,

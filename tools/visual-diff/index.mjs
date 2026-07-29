@@ -167,6 +167,55 @@ async function describeChanges(page, mask, W, H, scale) {
   return [...tally.values()].sort((a, b) => b.blocks - a.blocks)
 }
 
+/**
+ * Are two captures the same image, exactly?
+ *
+ * "Exactly" means every RGBA byte — deliberately NOT `scorePixels`. The
+ * capture-agreement question is "is the harness reproducible", which admits no
+ * tolerance, whereas the scoring comparator is tuned to ignore differences on
+ * purpose: `threshold: 0.1` discards any colour distance below ~26/255, and
+ * `includeAA: false` discards pixels it classifies as anti-aliased — most of
+ * the edges that a small layout shift moves. A gate built on that comparator is
+ * strictly weaker than the one the diff path already enforces.
+ *
+ * PNG byte equality is the fast path. A mismatch there is re-checked against
+ * decoded pixels, so a nondeterministic encoder can never manufacture a
+ * disagreement out of identical images.
+ */
+async function compareCaptures(pngA, pngB, W, H, defaults) {
+  if (pngA.equals(pngB)) {
+    return {
+      identical: true, exactDiffPixels: 0, scoredDiffPixels: 0,
+      percent: 0, total: W * H, mask: null
+    }
+  }
+  const a = await toRaw(pngA, W, H)
+  const b = await toRaw(pngB, W, H)
+  // Mark every byte-differing pixel. This, not the pixelmatch mask, is what
+  // gets localised and saved: a difference small enough for pixelmatch to
+  // discard still has to be findable, or the failure is undiagnosable.
+  const mask = Buffer.alloc(a.data.length)
+  let exactDiffPixels = 0
+  for (let i = 0; i < a.data.length; i += 4) {
+    if (
+      a.data[i] !== b.data[i] || a.data[i + 1] !== b.data[i + 1] ||
+      a.data[i + 2] !== b.data[i + 2] || a.data[i + 3] !== b.data[i + 3]
+    ) {
+      exactDiffPixels++
+      mask[i] = 255; mask[i + 3] = 255
+    }
+  }
+  const scored = scorePixels(a.data, b.data, W, H, defaults)
+  return {
+    identical: exactDiffPixels === 0,
+    exactDiffPixels,
+    scoredDiffPixels: scored.mismatched,
+    percent: scored.percent,
+    total: scored.total,
+    mask
+  }
+}
+
 async function calibrateScreen(screen, cfg, configDir) {
   const scale = cfg.figma.scale
   const W = screen.frame.width * scale
@@ -185,12 +234,9 @@ async function calibrateScreen(screen, cfg, configDir) {
     const s = await stableScreenshot(page)
     if (!s.settledAfter) console.warn(c.yellow('    ! run B never stopped repainting'))
     const second = s.png
-    const a = await toRaw(first, W, H)
-    const b = await toRaw(second, W, H)
-    const { mismatched, total, percent } = scorePixels(a.data, b.data, W, H, cfg.defaults)
-    const { diff: mask } = scorePixels(a.data, b.data, W, H, cfg.defaults, { diffMask: true })
-    const changes = mismatched ? await describeChanges(page, mask, W, H, scale) : []
-    return { first, second, mask, mismatched, total, percent, changes, settled }
+    const cmp = await compareCaptures(first, second, W, H, cfg.defaults)
+    const changes = cmp.identical ? [] : await describeChanges(page, cmp.mask, W, H, scale)
+    return { first, second, changes, settled, ...cmp }
   })
 }
 
@@ -263,10 +309,48 @@ async function collectStyles(page, selectors, varNames, extraProps = []) {
           '#' + out.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('')
 
         const b = el.getBoundingClientRect()
+        // right/bottom are carried explicitly so a spec can assert the edge that
+        // is actually anchored. For a text-sized box pinned to a trailing edge,
+        // x is width-dependent and right is not — asserting x there measures
+        // glyph metrics, which is the same mistake as asserting the width.
         rects[sel] = {
           x: +b.x.toFixed(2), y: +b.y.toFixed(2),
-          width: +b.width.toFixed(2), height: +b.height.toFixed(2)
+          width: +b.width.toFixed(2), height: +b.height.toFixed(2),
+          right: +(b.x + b.width).toFixed(2), bottom: +(b.y + b.height).toFixed(2)
         }
+
+        // Is a fixed-position overlay covering this element? The `painted`
+        // _effectiveBackground method samples the capture, so a scrim over the
+        // element silently returns the SCRIM's composited colour instead of the
+        // element's — the sidebar reads #050505 under the settings scrim and
+        // #080809 under the drawer scrim, neither of which is a real drift.
+        // Only `position: fixed` counts: that is what overlays are, and
+        // absolutely-positioned siblings inside a scroller are not.
+        const cx = b.x + b.width / 2
+        const cy = b.y + b.height / 2
+        let occludedBy = null
+        for (const n of document.querySelectorAll('*')) {
+          if (n === el || n.contains(el) || el.contains(n)) continue
+          const ncs = getComputedStyle(n)
+          if (ncs.position !== 'fixed') continue
+          if (ncs.visibility === 'hidden' || ncs.display === 'none') continue
+          const bgA = parse(ncs.backgroundColor)
+          const paints =
+            (bgA && bgA[3] > 0) ||
+            (ncs.backdropFilter && ncs.backdropFilter !== 'none') ||
+            (ncs.webkitBackdropFilter && ncs.webkitBackdropFilter !== 'none')
+          if (!paints) continue
+          const nb = n.getBoundingClientRect()
+          if (nb.width <= 0 || nb.height <= 0) continue
+          if (nb.x <= cx && nb.y <= cy && nb.right >= cx && nb.bottom >= cy) {
+            const cls = typeof n.className === 'string' && n.className.trim()
+              ? '.' + n.className.trim().split(/\s+/).join('.')
+              : ''
+            occludedBy = n.tagName.toLowerCase() + cls
+            break
+          }
+        }
+        elements[sel]._occludedBy = occludedBy
       }
       return { tokens, elements, rects }
     },
@@ -315,7 +399,21 @@ function auditStyles(styles, spec, paintedBg = null) {
       const actual = method === 'painted'
         ? (paintedBg ? paintedBg(sel) : null) || got._effectiveBackground
         : got._effectiveBackground
-      if (normHex(expected) !== normHex(actual)) {
+      // The painted method reads the capture, so anything drawn on top of the
+      // element is what gets sampled. Under a scrim the answer is the scrim,
+      // not a drift — skip loudly rather than reporting a colour the element
+      // never painted.
+      if (method === 'painted' && got._occludedBy) {
+        skipped.push({
+          selector: sel,
+          property: 'effective background',
+          reason:
+            `method "painted" samples the capture, and ${got._occludedBy} (position: fixed) ` +
+            `covers this element on this screen, so the sample would be the overlay's ` +
+            `composited colour rather than the element's. Not comparable — assert it on a ` +
+            `screen with no overlay, or give this screen its own spec with method "computed".`
+        })
+      } else if (normHex(expected) !== normHex(actual)) {
         findings.push({
           selector: sel, property: 'effective background',
           expected, actual,
@@ -348,13 +446,22 @@ function auditStyles(styles, spec, paintedBg = null) {
 
     if (want._rect) {
       const r = styles.rects[sel]
-      for (const dim of ['x', 'y', 'width', 'height']) {
+      // `_adjust` corrects a Figma coordinate for a CSS layout fact Figma does
+      // not model — currently only the stroke rule (see _strokeRule in the spec
+      // and "Strokes and layout" in the README). The raw Figma number stays in
+      // the file; only the comparison uses the adjusted one, and the finding
+      // reports both so an adjustment can never quietly hide a real drift.
+      const adj = want._rect._adjust || {}
+      for (const dim of ['x', 'y', 'width', 'height', 'right', 'bottom']) {
         if (want._rect[dim] == null || !r) continue
-        if (Math.abs(r[dim] - want._rect[dim]) > 0.5) {
+        const delta = typeof adj[dim] === 'number' ? adj[dim] : 0
+        const expected = want._rect[dim] + delta
+        if (Math.abs(r[dim] - expected) > 0.5) {
           findings.push({
             selector: sel, property: dim,
-            expected: `${want._rect[dim]}px`, actual: `${r[dim]}px`,
-            source: want._rect.source || 'get_metadata', isColour: false
+            expected: `${expected}px`, actual: `${r[dim]}px`,
+            source: want._rect.source || 'get_metadata', isColour: false,
+            ...(delta ? { figmaRaw: `${want._rect[dim]}px`, adjustment: delta, adjustmentWhy: adj._why ?? null } : {})
           })
         }
       }
@@ -376,17 +483,24 @@ function auditStyles(styles, spec, paintedBg = null) {
  *   lead         nothing independent supports it
  */
 function corroborate(pair, region, styleFindings, rects) {
-  const exact = styleFindings.find(
-    (f) => f.isColour && f.expectedHex === pair.figma && f.actualHex === pair.app
+  // TYPE GATE: only a style finding on a COLOUR property is evidence about a
+  // colour. A positional finding that happens to sit under the sample is not —
+  // "#b9e900→#baeb00 corroborated by .sb-count x" said nothing about colour, it
+  // only said a box near that colour had moved.
+  const colourFindings = styleFindings.filter((f) => f.isColour)
+
+  const exact = colourFindings.find(
+    (f) => f.expectedHex === pair.figma && f.actualHex === pair.app
   )
   if (exact) {
-    return { level: 'confirmed', by: `${exact.selector} ${exact.property}` }
+    return { level: 'confirmed', by: `${exact.selector} ${exact.property}`, match: 'value' }
   }
+
   // Overlap is tested against where this colour pair was actually sampled, not
   // the whole region — otherwise one style finding vouches for every colour
   // difference anywhere near it, which is not corroboration.
   const b = pair.box
-  const overlapping = b && styleFindings.find((f) => {
+  const overlapping = b && colourFindings.find((f) => {
     const r = rects[f.selector]
     if (!r) return false
     return (
@@ -395,9 +509,14 @@ function corroborate(pair, region, styleFindings, rects) {
     )
   })
   if (overlapping) {
-    return { level: 'corroborated', by: `${overlapping.selector} ${overlapping.property}` }
+    // Two tiers, not three. Once only colour findings can corroborate, the old
+    // middle tier said "a colour assertion on an overlapping element failed" —
+    // which is the same claim as `confirmed`, differing only in whether the two
+    // checks named the identical hex pair. That distinction is recorded as
+    // `match` rather than as a separate level.
+    return { level: 'confirmed', by: `${overlapping.selector} ${overlapping.property}`, match: 'element' }
   }
-  return { level: 'lead', by: null }
+  return { level: 'lead', by: null, match: null }
 }
 
 const rgbOf = (h) => {
@@ -706,11 +825,21 @@ async function main() {
     // ── --calibrate ──────────────────────────────────────────────────────────
     if (mode === 'calibrate') {
       const r = await calibrateScreen(screen, cfg, configDir)
-      const clean = r.mismatched === 0
+      // Byte-exact, matching the diff path's own capture-agreement gate. The
+      // scored percentage is printed alongside, because the gap between the two
+      // numbers is the interesting part: pixels that differ but score zero are
+      // exactly what a tolerance-based gate would wave through.
+      const clean = r.identical
       process.stdout.write(
-        `    delta  ${clean ? c.green('0.00%') : c.red(`${r.percent.toFixed(2)}%`)} ` +
-          `${c.dim(`(${r.mismatched.toLocaleString()} / ${r.total.toLocaleString()} px, two launches)`)}\n`
+        `    exact  ${clean ? c.green('identical') : c.red(`${r.exactDiffPixels.toLocaleString()} px differ`)} ` +
+          `${c.dim(`(of ${r.total.toLocaleString()}, two launches)`)}\n`
       )
+      if (!clean) {
+        process.stdout.write(
+          `    scored ${c.dim(`${r.percent.toFixed(2)}% (${r.scoredDiffPixels.toLocaleString()} px) after threshold ${cfg.defaults.threshold} / includeAA ${cfg.defaults.includeAA === true}`)}` +
+            `${r.scoredDiffPixels === 0 ? c.yellow('  ← scored zero: a tolerance-based gate would have passed this') : ''}\n`
+        )
+      }
 
       if (!clean) {
         failed = true
@@ -736,7 +865,7 @@ async function main() {
               { title: 'Run B', sub: 'second launch', buf: r.second },
               {
                 title: 'Delta',
-                sub: `${r.percent.toFixed(2)}% differs between runs`,
+                sub: `${r.exactDiffPixels.toLocaleString()} px differ between runs`,
                 buf: await sharp(r.mask, { raw: { width: W, height: H, channels: 4 } }).png().toBuffer()
               }
             ],
@@ -791,21 +920,21 @@ async function main() {
 
     if (!flag('single-capture')) {
       const capB = await captureOnce()
-      const identical = capA.png.equals(capB.png)
-      let diffPixels = 0
-      if (!identical) {
-        const ra = await toRaw(capA.png, W, H)
-        const rb = await toRaw(capB.png, W, H)
-        diffPixels = scorePixels(ra.data, rb.data, W, H, cfg.defaults).mismatched
+      // Same comparator as --calibrate, so the two gates cannot disagree about
+      // what "reproducible" means.
+      const cmp = await compareCaptures(capA.png, capB.png, W, H, cfg.defaults)
+      const identical = cmp.identical
+      agreement = {
+        captures: 2,
+        identical,
+        diffPixels: cmp.exactDiffPixels,
+        scoredDiffPixels: cmp.scoredDiffPixels
       }
-      agreement = { captures: 2, identical, diffPixels }
       if (!identical) {
-        // Keep both frames and the mask. Refusing to report without saving
-        // anything makes the failure undiagnosable — and this path flakes where
-        // --calibrate does not, so it cannot be reproduced through that.
-        const ra = await toRaw(capA.png, W, H)
-        const rb = await toRaw(capB.png, W, H)
-        const { diff: mask } = scorePixels(ra.data, rb.data, W, H, cfg.defaults, { diffMask: true })
+        // Keep both frames and the mask — refusing to report without saving
+        // anything makes the failure undiagnosable. This is what made the 20px
+        // scroll shift traceable.
+        const mask = cmp.mask
         await writeFile(join(OUT_DIR, `${screen.id}.capture-a.png`), capA.png)
         await writeFile(join(OUT_DIR, `${screen.id}.capture-b.png`), capB.png)
         await writeFile(
@@ -815,7 +944,7 @@ async function main() {
         agreement.artifacts = [`${screen.id}.capture-a.png`, `${screen.id}.capture-b.png`, `${screen.id}.capture-diff.png`]
       }
       process.stdout.write(
-        `    capture  ${identical ? c.green('2/2 identical') : c.red(`2 captures DISAGREE (${diffPixels.toLocaleString()} px)`)}\n`
+        `    capture  ${identical ? c.green('2/2 identical') : c.red(`2 captures DISAGREE (${cmp.exactDiffPixels.toLocaleString()} px exact, ${cmp.scoredDiffPixels.toLocaleString()} scored)`)}\n`
       )
       if (!identical) {
         failed = true
@@ -829,7 +958,10 @@ async function main() {
           frame: screen.frame,
           window: { requested: [width, height], settled: capA.settled },
           captureAgreement: agreement,
-          diffPercent: null,
+          styleAudit: null,
+          colourCheck: null,
+          tokenAudit: null,
+          debug: { pixelDelta: null },
           skipped: 'captures disagreed'
         })
         continue
@@ -922,10 +1054,11 @@ async function main() {
         )
       )
 
-      const tint = percent < 2 ? c.green : percent < 10 ? c.yellow : c.red
+      // Deliberately untinted: a green delta reads as a pass, and this number
+      // is not a verdict. It lives under `debug` in report.json for the same
+      // reason. The style and colour audits below are the output.
       process.stdout.write(
-        `    delta    ${tint(`${percent.toFixed(2)}%`)} ` +
-          `${c.dim(`(${mismatched.toLocaleString()} / ${total.toLocaleString()} px)`)}\n`
+        `    delta    ${c.dim(`${percent.toFixed(2)}%  (${mismatched.toLocaleString()} / ${total.toLocaleString()} px) — diagnostic only, not a score`)}\n`
       )
       if (screen.deltaCaveat) {
         process.stdout.write(`             ${c.dim('! blind to card placement — see report.json')}\n`)
@@ -949,7 +1082,7 @@ async function main() {
         for (const f of cc.findings.slice(0, 3)) {
           process.stdout.write(
             `        ${c.red('✗')} ${f.figma}→${f.app} Δ${f.maxDelta} ×${f.samples}  ` +
-              `${c.dim(`${f.level} by ${f.by}`)}\n`
+              `${c.dim(`${f.level} (${f.match} match) by ${f.by}`)}\n`
           )
         }
       }
@@ -1017,16 +1150,35 @@ async function main() {
       window: { requested: [width, height], settled },
       settledAfterFrames: settledAfter,
       captureAgreement: agreement,
-      capture: { width: W, height: H, scale },
-      resampled,
-      diffPixels: mismatched,
-      totalPixels: total,
-      diffPercent: percent === null ? null : +percent.toFixed(3),
-      ...(screen.deltaCaveat ? { deltaCaveat: screen.deltaCaveat } : {}),
-      regions,
+
+      // ── the actual output ──────────────────────────────────────────────────
+      // Style and colour findings read the DOM and sample exact pixels, so they
+      // say which property is wrong on which element. Everything derived from
+      // the pixel delta lives under `debug` — see the note on `debug` below.
+      styleAudit,
       colourCheck,
       tokenAudit,
-      styleAudit,
+
+      debug: {
+        _why:
+          'Pixel-delta numbers are diagnostic only — do not gate on them. They ' +
+          'move in the wrong direction: correcting the 20px grid offset raised ' +
+          'the whole-screen delta from 2.175% to 2.471% while bringing the app ' +
+          'closer to the design, and a 20px offset of the entire card grid ' +
+          'scored 0.00% in the gallery region. Fixture card artwork is cropped ' +
+          'from the reference at app-measured rects, so cards align by ' +
+          'construction wherever they sit. Use styleAudit and colourCheck.',
+        capture: { width: W, height: H, scale },
+        resampled,
+        pixelDelta: {
+          diffPixels: mismatched,
+          totalPixels: total,
+          diffPercent: percent === null ? null : +percent.toFixed(3),
+          ...(screen.deltaCaveat ? { caveat: screen.deltaCaveat } : {})
+        },
+        regions
+      },
+
       referenceSource: ref?.source ?? null,
       artifacts: Object.fromEntries(Object.entries(paths || {}).map(([k, v]) => [k, relative(REPO, v)]))
     })

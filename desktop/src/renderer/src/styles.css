@@ -162,6 +162,11 @@ select {
   justify-content: space-between;
   font-size: 10px;
   font-weight: 600;
+  /* Figma's label text node is exactly 10px tall (5181:43). Without this the
+     span inherits the root 1.5 line-height and becomes a 15px line box, which
+     pushed the whole Library section — and only that section, since the
+     Collections/Tags labels are sized by their 22px button — down by 5px. */
+  line-height: 1;
   letter-spacing: 0.6px;
   text-transform: uppercase;
   color: var(--muted);
@@ -195,6 +200,14 @@ select {
   letter-spacing: 0.28px;
   line-height: 1;
   transition: background-color var(--dur-micro) ease, color var(--dur-micro) ease;
+}
+/* Figma spaces category and collection rows 40px apart — 32px tall with an 8px
+   gap (5181:44 children at y = 0, 40, 80, 120, 160). Adjacent-sibling rather
+   than a margin on every row, so the gap falls only BETWEEN rows: a trailing
+   margin would push the next section label 8px past the design, and the
+   label→row gap is already the label's own 8px padding-bottom. */
+.sb-row + .sb-row {
+  margin-top: 8px;
 }
 .sb-row:hover {
   background: rgba(246, 243, 243, 0.04);

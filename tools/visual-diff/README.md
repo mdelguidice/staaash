@@ -31,7 +31,7 @@ For every screen in [`visual-diff.config.mjs`](../../visual-diff.config.mjs):
 | `<id>.diff.png` | differing pixels, magenta over a dimmed reference |
 | `<id>.side-by-side.png` | all three panels with labels — start here |
 | `<id>.calibrate*.png` | written only when `--calibrate` fails |
-| `report.json` | machine-readable deltas, whole-screen and per-region |
+| `report.json` | style, colour and token findings; pixel numbers under `debug` |
 | `figma/<id>@<scale>x.png` | cached reference; delete to force a re-fetch |
 
 ## Flags
@@ -59,16 +59,84 @@ screens, and exits non-zero.
 `report.json` records the outcome per screen:
 
 ```json
-"captureAgreement": { "captures": 2, "identical": true, "diffPixels": 0 }
+"captureAgreement": { "captures": 2, "identical": true,
+                      "diffPixels": 0, "scoredDiffPixels": 0 }
 ```
 
-`--single-capture` opts out when you want speed over certainty. `--calibrate`
-remains the explicit gate — it additionally names *what* moved.
+Agreement is **byte-exact** — every RGBA channel, not `scorePixels`. The scoring
+comparator is tuned to ignore differences on purpose (`threshold: 0.1` discards
+any colour distance below ~26/255; `includeAA: false` discards pixels it
+classifies as anti-aliased, which is most of the edges a small layout shift
+moves), so it is the wrong instrument for "is this reproducible". `diffPixels`
+is the exact count; `scoredDiffPixels` is what the tolerant comparator would
+have counted. When the second is 0 and the first is not, a tolerance-based gate
+would have passed a screen that genuinely differs.
+
+`--calibrate` uses the **same comparator**, so the two gates cannot disagree
+about what "reproducible" means.
+
+`--single-capture` opts out when you want speed over certainty.
 
 On disagreement both frames and the mask are written
-(`<id>.capture-a.png`, `.capture-b.png`, `.capture-diff.png`). That matters:
-this path has caught a flake that `--calibrate` never reproduced, so without the
-artifacts the failure would not have been diagnosable.
+(`<id>.capture-a.png`, `.capture-b.png`, `.capture-diff.png`). That matters: it
+is what made the 20px scroll shift diagnosable — the mask marks every
+byte-differing pixel, including ones `scorePixels` discards.
+
+### Known flake: `everything`, exactly 605,635 px
+
+`everything` disagrees with itself on roughly half of runs, always by **exactly
+605,635 pixels**. Bimodal, not noise — two stable rendering states.
+
+What is established:
+
+- **Not layout, and not the sidebar.** Differences start at css x≥240 and
+  concentrate in css y 120–480. 73% of them are Δ1–2, max Δ108. Cropping both
+  frames at the busiest area shows identical content in identical positions.
+- **The blurred card backdrops.** `.card-img-backdrop` runs
+  `filter: blur(26px) saturate(1.15) brightness(0.55)` behind every `.is-contain`
+  card, and the differing pixels track those regions. `.card` also carries
+  `content-visibility: auto`, so a card has more than one route to its first
+  paint.
+- **Pre-existing.** Reverting `styles.css` to HEAD and re-calibrating reproduced
+  the flake at the *same* 605,635 px, so it is not caused by the sidebar work.
+- **The pixel count tracks the card positions.** It was 605,635 with
+  `META_H = 24`, and moved to 600,880 the moment `META_H` became 28 and the
+  cards shifted. Whatever differs is drawn where the cards are.
+
+**`content-visibility: auto` has been ruled out.** 20 calibrations per arm,
+arms alternating run-by-run so machine drift hits both equally:
+
+| Arm | Disagreements | Rate | Constant |
+|---|---|---|---|
+| baseline (`contentVisibility: 'auto'`) | 4/19 | 21% | 605,635 px |
+| treatment (`contentVisibility: 'visible'`) | 5/19 | 26% | 606,052 px |
+
+(One run per arm errored and is excluded.) Disabling it did not reduce the flake
+— the treatment rate is nominally *higher*, and the treatment arm is still
+bimodal on its own single constant, just a different one because more cards
+render. The remaining suspect is `.card-img-backdrop`'s `filter: blur(26px)`.
+
+Also rejected earlier, on weaker evidence: `--num-raster-threads=1` (1/5) and
+`--disable-checker-imaging` (2/6) against a 4/8 baseline. Neither was shipped.
+
+**What the flake does and does not affect** — measured over six single-capture
+runs, which landed in exactly two capture states:
+
+| | State A (4 runs) | State B (2 runs) |
+|---|---|---|
+| style findings | 4, identical hash | 4, **identical hash** |
+| colour findings | 0 | 0 |
+| colour **leads** | 54 | **51** |
+| pixel delta | 2.022% | **2.109%** |
+
+**The style audit is immune** — it reads the DOM, and its output was
+byte-identical across both states. The colour leads and the pixel delta are
+state-dependent: deterministic within a state, different between them. So a
+disagreeing capture invalidates the delta and the leads, not the findings.
+
+Note the reporting difference the byte-exact gate buys: the tolerant comparator
+scores the same disagreement at **0.07% (3,218 px)**, which reads as noise,
+while 13.3% of the frame genuinely differs.
 
 ### Region scores can be blind
 
@@ -96,15 +164,28 @@ sampler only sees pixels, so it cannot tell "same element, wrong colour" from
 (`DRIFT_MAX`), which was a poor proxy and is gone. Instead each colour pair is
 scored against the DOM-reading style audit:
 
+**Only a style finding on a colour property counts.** A positional finding that
+happens to sit under the sample is not evidence about colour — the audit was
+reporting `#b9e900→#baeb00 Δ2 "corroborated by .sb-count x"`, where the style
+side had said nothing about colour at all, only that a box nearby had moved by a
+pixel. All three findings that survived the previous run were of that kind, and
+all three correctly became leads once the gate was added.
+
+Two tiers:
+
 | Level | Meaning |
 |---|---|
-| `confirmed` | a style finding on a colour property with the same two values |
-| `corroborated` | a style finding whose element overlaps **where this pair was sampled** |
+| `confirmed` | a **colour** style finding supports it — `match: "value"` if the two checks name the same hex pair, `match: "element"` if it overlaps **where this pair was sampled** |
 | `lead` | nothing independent supports it — not reported as a finding |
 
-`confirmed` needs the two checks to agree on a *value*, which for a translucent
-fill means the audit must know what the element actually paints, not what it
-declares. `_effectiveBackground` supplies that (see below).
+There used to be a middle `corroborated` tier. Once only colour findings can
+corroborate, that tier made the same claim as `confirmed` and differed only in
+whether the two checks named the identical hex pair — which is now recorded as
+`match` rather than as a separate level.
+
+`match: "value"` needs the two checks to agree on a *value*, which for a
+translucent fill means the audit must know what the element actually paints, not
+what it declares. `_effectiveBackground` supplies that (see below).
 
 Overlap is tested against the pair's own sampled bounding box, not the whole
 region, so one style finding cannot vouch for a colour difference elsewhere in
@@ -211,12 +292,108 @@ is what makes `confirmed` reachable. It is only valid where an element's
 interior really is its own background: on a container full of cards the modal
 colour is a card, not the canvas.
 
+**`painted` is guarded against overlays.** It reads the capture, so anything
+drawn on top is what gets sampled. The sidebar was reporting `#050505` on
+`settings` and `#080809` on `drawer-open` against its real `#0a0a0a` — those are
+the scrims, not a drift. The audit now scans for any `position: fixed` element
+that paints (background alpha > 0, or a backdrop filter) and covers the sampled
+element's centre, and **skips the assertion with the culprit named** rather than
+reporting a colour the element never painted:
+
+```
+SKIP .sb effective background → method "painted" samples the capture, and
+div.drawer-scrim.is-open (position: fixed) covers this element on this screen…
+```
+
+Only `position: fixed` counts — that is what overlays are; absolutely-positioned
+siblings inside a scroller are not. The fix for a screen that legitimately needs
+the value is its own spec with `method: "computed"`.
+
 ### Text-sized elements
 
 Do not assert width/height on anything sized by its own text — a font-metric
 difference of a fraction of a pixel then reads as a geometry failure. Assert
 position, padding and type instead. `.seg` and the count badge are set up this
-way.
+way. For *which* position to assert, see "Right-anchored boxes" below.
+
+### Never assert only the first item of a list
+
+**A first-item assertion passes whenever the container's origin is correct, and
+is blind to every per-item accumulation below it.** That is not a hypothetical:
+the sidebar audit passed for weeks with `.sb-row.is-active` exact at y=70 while
+the app was omitting an 8px gap between *every* row, so the list ran 32px short
+by the Collections header.
+
+For any repeated or mapped list, **assert the last item the design draws**, and
+keep the first only as an origin check. Both together localise a failure — first
+passing and last failing means accumulation; both failing means the origin.
+
+Two traps when picking "last":
+
+- **The DOM's last item may not be the design's.** The fixture seeds the whole
+  library — 235 cards, 26,879px of grid — while the Figma frame lays out the 8
+  above the fold. `.masonry` height and `:last-child` are not comparable
+  quantities; card 8 is. Container total height only works when both sides
+  contain the same items.
+- **Both sides must order identically.** The masonry places shortest-column-
+  first, which is deterministic, so card 8 lands third in column 1 in both. If
+  ordering were content-dependent, the assertion would be measuring the fixture.
+
+The sweep is recorded in `_listRule` at the top of the styles file, including
+lists that are deliberately **not** assertable (tags: hidden in Figma, empty in
+the fixture — no list on either side).
+
+### Right-anchored boxes: assert the edge that is actually anchored
+
+`_rect` accepts `right` and `bottom` as well as `x`/`y`/`width`/`height`. For a
+text-sized box pinned to a trailing edge, `x` carries the box's own glyph width
+— asserting it is the same mistake as asserting the width. Assert `right`.
+
+**Check that the edge really is anchored first.** The count badge is: it is the
+last flex child of `.sb-row` with the name flexing, so its trailing edge is
+fixed and asserting `right` clears what `x` could not. `.seg` is *not*: it sits
+left of `.btn-new`, which is itself text-sized, so its right edge inherits that
+neighbour's glyph width. Asserting `right` there cut the error from 2.90px to
+0.56px but could not clear it, because neither of its edges is anchored to
+anything fixed. Measured cause: `.btn-new` is 60.56 wide against Figma's 60.
+
+### Strokes and layout
+
+**Figma strokes do not consume layout. CSS `border` on a `box-sizing:
+border-box` element does.** So every Figma coordinate measured *across* a border
+the app actually draws is off by that border's width, on every stroked
+container, forever. This is a systematic offset, not a bug in either tool.
+
+The rule, applied from 2026-07-28:
+
+1. **The spec is adjusted, not the app.** Record it as `_adjust` on the
+   `_rect`, with a `_why`. The raw Figma number stays in the file; only the
+   comparison uses the adjusted one, and the finding reports `figmaRaw`,
+   `adjustment` and `adjustmentWhy` alongside, so an adjustment can never
+   quietly hide a real drift.
+2. **Strokes drawn as `outline` or `box-shadow` consume no layout and need no
+   adjustment.** `.card-media` is the reference implementation: `outline: 1px
+   solid var(--border-faint); outline-offset: -1px`. Assert Figma's number as-is.
+3. **The adjustment propagates to children.** A `width: 100%` child of a
+   bordered container, and anything anchored to that container's trailing edge,
+   inherits the same offset.
+
+Worked example — `.sb` has `border-right: 1px` inside its 264px border box, so
+its content box is `264 − 20 − 20 − 1 = 223` and `.sb-row` is 223 wide against
+Figma's 224:
+
+```json
+"_rect": { "x": 20, "y": 70, "width": 224, "height": 32,
+           "_adjust": { "width": -1, "_why": "…" } }
+```
+
+Adjusting the spec rather than the app is the right way round here: the app's
+223 leaves a symmetric 20px inside both edges, whereas Figma's non-layout stroke
+leaves 20px on the left and 19px on the right. The app is the more correct of
+the two.
+
+**Before adding a stroked container to a spec, check which mechanism draws it.**
+`border` → adjust; `outline`/`box-shadow` → do not.
 
 If a screen has no styles or variables file of its own, the `everything` one is
 borrowed and the report says so.
@@ -332,15 +509,34 @@ node tools/visual-diff/index.mjs --calibrate
 
 Captures each screen in **two independent launches** and diffs them. This asks
 "does re-running the harness give the same answer?", which has to be true before
-any score against Figma means anything. It must print `0.00%`; it exits `1` and
-names what moved if not:
+any score against Figma means anything. It must print `identical`; it exits `1`
+and names what moved if not:
 
 ```
-delta  5.23% (238,597 / 4,561,920 px, two launches)
+exact  238,597 px differ (of 4,561,920, two launches)
+scored 5.23% (238,597 px) after threshold 0.1 / includeAA false
 captures are not reproducible. what changed:
   1038 blk  img.card-img
             at 676,84 → 1020,428 css px
 ```
+
+**What `--calibrate` reuses between the two captures: nothing.** Each capture is
+a separate `withApp()` — its own Electron launch, its own window sizing, its own
+full run of the screen's `route.steps`, with `resetVolatileState()` clearing the
+caches, local/session storage and Chromium's `Local State` first. Only the
+fixture database on disk is shared, and it is read-only. So `--calibrate` does
+exercise route steps, including click-driven side effects like `scrollIntoView`;
+it is not a same-session re-screenshot.
+
+Verified rather than assumed: adding a `Math.random()`-driven `eval` step to a
+route made calibration fail (160,668 px differing across two launches), which is
+only possible if the step ran in both.
+
+Its historical weakness was the **comparator**, not the setup: the verdict came
+from `scorePixels` while the message claimed "byte-identical", so a difference
+under the threshold or classified as anti-aliased passed the gate. It is
+byte-exact as of 2026-07-28 and reports both numbers, so the gap is visible
+instead of silent.
 
 Differing pixels are mapped back through `elementFromPoint` to the elements
 under them, so you get *what* changed, not just how much.
@@ -417,13 +613,22 @@ Other sources of drift found along the way, all handled automatically now:
 
 ## Reading the numbers
 
-The current `everything` score is **2.24%** whole-screen, and it is now
-reproducible run to run. (Earlier write-ups said 2.10% — that was one of the two
-focus states the keychain dialog produced; 2.24% is the stable value.) With the
-fixture in place the number is dominated by genuine design-vs-code differences
-rather than by content, which is what makes it worth tracking.
+**Do not gate on the pixel delta.** It lives under `debug` in `report.json`, and
+the terminal prints it dim and untinted, because it is diagnostic — it moves in
+the wrong direction often enough to be actively misleading:
 
-Two divergences it currently surfaces, both real:
+- Correcting the 20px grid offset **raised** the whole-screen delta from 2.175%
+  to 2.471% while bringing the app closer to the design. The corrected padding
+  pushed a card boundary under the ask bar, and the backdrop blur spread a 5px
+  canvas strip across a wide band.
+- A 20px offset of the entire card grid scored **0.00%** in the gallery region,
+  because fixture artwork is cropped from the reference at app-measured rects.
+
+The top-level output is `styleAudit`, `colourCheck` and `tokenAudit`. Those read
+the DOM and sample exact pixels, so they name the property and the element. The
+delta is for eyeballing the side-by-side and for spotting gross breakage.
+
+Two divergences the delta currently surfaces, both real:
 
 - **Collections list.** The design shows five collections then `••• More`; the
   code's `COLLECTIONS_VISIBLE` is 6, so `More` only appears at seven or more and

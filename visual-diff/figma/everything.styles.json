@@ -6,6 +6,8 @@
     "get_metadata": "XML geometry \u2014 x, y, width, height only"
   },
   "_rule": "Assert only what a source states outright. Where the two sources disagree, skip the property and record why in _skipped rather than picking one.",
+  "_listRule": "Never assert only the FIRST item of a repeated/mapped list. A first-item assertion passes whenever the container origin is correct and is blind to every per-item accumulation below it. Assert the LAST item the design draws (or the container's total height where that is comparable), and keep the first only as an origin check. Sweep as of 2026-07-28 — library rows: first + last (Trash). Collections rows: last (••• More). Masonry cards: first + card 8, the last the design draws; .masonry total height and :last-child are NOT comparable because the fixture seeds all 235 bookmarks while the frame draws 8. Tags: not assertable — Figma's Tags Section (5181:148) and tag Section items (5270:138) are hidden, and the fixture renders no tags with count > 0, so there is no list on either side. Topbar and ask bar contain no mapped lists.",
+  "_strokeRule": "Figma strokes do not consume layout; a CSS border on a border-box container does. Where the app draws a Figma stroke as a border, every Figma coordinate measured across that border is off by the border width, and the SPEC is adjusted — not the app. Record it as _rect._adjust with a _why. Strokes drawn as outline/box-shadow (e.g. .card-media) consume no layout and need no adjustment. Full rule: tools/visual-diff/README.md, 'Strokes and layout'.",
   "selectors": {
     ".ask": {
       "_node": "5181:540",
@@ -67,7 +69,8 @@
     },
     ".sb-row.is-active": {
       "_node": "5181:45",
-      "_name": "Category Item (Everything, active)",
+      "_name": "Category Item (Everything, active — FIRST library row)",
+      "_pairedWith": ".sb-scroll > button:nth-of-type(5) — see that entry for why the last row is asserted too.",
       "background-color": {
         "value": "#ccff00",
         "source": "get_design_context"
@@ -89,6 +92,56 @@
         "y": 70,
         "width": 224,
         "height": 32,
+        "source": "get_metadata",
+        "_adjust": {
+          "width": -1,
+          "_why": "Stroke rule. .sb draws Figma's 1px right stroke as border-right on a border-box box, so its content box is 264-20-20-1 = 223 and every width:100% child is 1px narrower than Figma's 224. Adjusting the spec keeps the app's symmetric 20px inner padding, which Figma's non-layout stroke actually breaks (its row leaves 19px on the right, 20px on the left)."
+        }
+      }
+    },
+    ".sb-scroll > button:nth-of-type(5)": {
+      "_node": "5181:73",
+      "_name": "Category Item (Trash — LAST library row)",
+      "_note": "LAST item of a repeated list, deliberately. Asserting the FIRST item of a mapped list passes whenever the container origin is right, and hides every per-item accumulation below it — which is exactly how an 8px row-gap omission survived a passing sidebar audit. Figma spaces category rows 40px apart (5181:44 children at y = 0, 40, 80, 120, 160); absolute y = 70 + 160.",
+      "_rect": {
+        "x": 20,
+        "y": 230,
+        "width": 224,
+        "height": 32,
+        "source": "get_metadata",
+        "_adjust": {
+          "width": -1,
+          "_why": "Stroke rule — see .sb-row.is-active."
+        }
+      }
+    },
+    ".sb-more": {
+      "_node": "5181:130",
+      "_name": "Collection Item Container (••• More — LAST collections row)",
+      "_note": "LAST item of the collections list, same reasoning as the Trash row. Collections Items (5181:89) is at absolute y = 308 with containers 40px apart; the last one is the ••• More row at 308 + 200. Figma shows five collections then More; the app's COLLECTIONS_VISIBLE is 6, so it shows six then More — this assertion is what makes that divergence visible as geometry rather than as a README footnote.",
+      "_rect": {
+        "x": 20,
+        "y": 508,
+        "width": 224,
+        "height": 32,
+        "source": "get_metadata",
+        "_adjust": {
+          "width": -1,
+          "_why": "Stroke rule — see .sb-row.is-active."
+        }
+      }
+    },
+    ".masonry-item:nth-child(8) .card-media": {
+      "_node": "5181:309",
+      "_name": "Thumbnail, card 8 (LAST card the design draws — col-1, 3rd)",
+      "_note": "LAST card of the masonry, for the same reason as the sidebar rows. 'Last' means the last card the DESIGN draws, not the last in the DOM: the fixture seeds the whole library (235 cards, 26,879px of grid) while the Figma frame only lays out the 8 above the fold, so .masonry height and :last-child are not comparable quantities. Placement order is deterministic — shortest-column-first — and card 8 lands third in column 1 in both. Absolute y = 90 (cards frame) + 625 (col-1 third card).",
+      "_skipped": {
+        "height": "Same reason as the first card: the design's 195/350 thumbnails imply aspects 1.872 and 1.043, and neither is in the app's CARD_ASPECTS buckets (format.js), so the fixture picks 1.78 and 1.0. Asserting height would test the bucket choice; asserting the accumulated y catches the consequence."
+      },
+      "_rect": {
+        "x": 284,
+        "y": 715,
+        "width": 365,
         "source": "get_metadata"
       }
     },
@@ -120,15 +173,16 @@
         "source": "get_design_context"
       },
       "_rect": {
-        "x": 1216,
         "y": 19,
+        "right": 1314,
         "source": "get_metadata"
       },
-      "_note": "Width/height deliberately not asserted: the control is sized by its button text. Position, padding, gap and fills are asserted instead."
+      "_note": "Width/height deliberately not asserted: the control is sized by its button text. `right` is asserted instead of `x` because the topbar is a flex row whose trailing edge is fixed at 1420 (1440 - 20 padding), so x carries this control's own glyph width while right does not. Figma right = 1216 + 98. NOTE: right is not fully clean either — .seg sits left of .btn-new, which is also text-sized, so ~0.5px of the neighbour's glyph width lands here. Measured: .btn-new is 60.56 wide against Figma's 60, and that 0.56 is the entire residual."
     },
     ".card-media": {
       "_node": "5181:233",
-      "_name": "Thumbnail (first card)",
+      "_name": "Thumbnail (FIRST card)",
+      "_pairedWith": ".masonry-item:nth-child(8) .card-media — a first-item assertion only proves the grid ORIGIN is right. The last-card assertion is what proves the run of cards between them accumulates correctly.",
       "_skipped": {
         "height": "get_metadata gives 195, implying aspect 1.872. That is not one of the app's CARD_ASPECTS buckets (format.js), so asserting it would test the fixture's bucket choice rather than the app. The x/y assertion still catches where the grid starts.",
         "background-color": "The design fills the thumbnail with an image, so no background colour is stated; the app's --surface shows only where an image is missing."
@@ -218,10 +272,15 @@
         "source": "get_design_context (text node 5181:51)"
       },
       "_rect": {
-        "x": 210,
         "y": 77,
-        "source": "get_metadata"
-      }
+        "right": 236,
+        "source": "get_metadata",
+        "_adjust": {
+          "right": -1,
+          "_why": "Stroke rule — the badge is anchored to .sb-row's trailing edge, and that row's content box lost 1px to .sb's border-right (see .sb-row.is-active). Figma right = 210 + 26."
+        }
+      },
+      "_note": "`right` is asserted instead of `x`: the badge is the last flex child of .sb-row with .sb-row-name flexing, so its trailing edge is anchored and its leading edge floats with the digit count. Asserting x measured glyph width, the same mistake as asserting width."
     }
   }
 }
