@@ -8,10 +8,10 @@
   "_rule": "Assert only what a source states outright. Where the two sources disagree, skip the property and record why in _skipped rather than picking one.",
   "_assertionRule": "Assert only quantities the DESIGN determines — proportions, spacing, colour, type, radii, behaviour thresholds. Never assert quantities CONTENT determines — item counts, list totals, text-derived sizes, or any position downstream of them. Three corollaries, each paid for by a withdrawn assertion: (1) LISTS — assert the last item only where the list's length is fixed by the design. The five Library categories are hardcoded in Sidebar.jsx and match Figma, so the Trash row is assertable; .sb-more was not, because it compared Figma's five mock collections against the fixture's seven. A first-item assertion is only an origin check and is blind to accumulation — so where the last item is not assertable, the accumulation is not either, and that is a limit to state rather than to work around. (2) ANCHORED EDGES — for a text-sized box assert the edge the design anchors, not the one its glyphs move, and verify the edge really is anchored: .sb-count's trailing edge is fixed by its row, .seg's is not because it sits left of another text-sized box. (3) ACCUMULATION — an accumulated position is assertable only if every term in it is design-determined. Masonry card 8's y accumulates media heights chosen by a hash of the bookmark id, so it measured the fixture, not the app. Full statement: tools/visual-diff/README.md, 'What may be asserted'.",
   "_notAssertable": {
-    "collections rows": "Count is fixture data — Figma draws 5 mock collections plus ••• More, the fixture seeds 7. Withdrawn 2026-07-28.",
     "masonry accumulation": "Card 8's y accumulates per-card media heights, and a card's aspect bucket comes from a hash of its bookmark id. Withdrawn 2026-07-28; the finding it produced is recorded on .card-media as _cardAspectDrift. The design-determined alternative — the third column's x, which accumulates two column widths and two gutters — is also not clean: Figma's own frame pads 20px on the left and 21px on the right, so its columns imply 365.0 where the app computes 365.33, and the 0.67px difference is the design's rounding rather than the app's.",
     "tags": "Figma's Tags Section (5181:148) and tag Section items (5270:138) are hidden, and the fixture renders no tags with count > 0. No list on either side.",
-    "text-derived widths": ".seg's width and right edge, .ask-chip's width, .sb-count's width and x. All move with glyph metrics. Where the design anchors an edge, that edge is asserted instead."
+    "text-derived widths": ".seg's width and right edge, .ask-chip's width, .sb-count's width and x. All move with glyph metrics. Where the design anchors an edge, that edge is asserted instead.",
+    "collection COUNT vs collection ROWS": "The number of rows shown before ••• More is design-determined (COLLECTIONS_VISIBLE, five in Figma) and IS asserted via .sb-more. How many collections the library actually holds is content and is not asserted anywhere."
   },
   "_strokeRule": "Figma strokes do not consume layout; a CSS border on a border-box container does. Where the app draws a Figma stroke as a border, every Figma coordinate measured across that border is off by the border width, and the SPEC is adjusted — not the app. Record it as _rect._adjust with a _why. Strokes drawn as outline/box-shadow (e.g. .card-media) consume no layout and need no adjustment. Full rule: tools/visual-diff/README.md, 'Strokes and layout'.",
   "selectors": {
@@ -260,6 +260,29 @@
           "_why": "Stroke rule — the badge is anchored to .sb-row's trailing edge, and that row's content box lost 1px to .sb's border-right (see .sb-row.is-active). Figma right = 210 + 26."
         }
       }
+    },
+    ".sb-more": {
+      "_node": "5181:130",
+      "_name": "Collection Item Container (••• More — LAST collections row)",
+      "_note": "Reinstated 2026-07-29. It was withdrawn as content-determined, which was a misdiagnosis: the number of collection rows shown before More is COLLECTIONS_VISIBLE, a design constant (Figma draws five), not fixture data. The fixture seeding more than five is what makes More render at all, and that is a stated fixture invariant rather than a variable. Absolute y = 308 + 5*40.",
+      "_requires": "The fixture must seed more than COLLECTIONS_VISIBLE collections, or .sb-more does not render and this reports the element as missing. seed-fixture.mjs seeds seven.",
+      "_rect": {
+        "x": 20,
+        "y": 508,
+        "width": 224,
+        "height": 32,
+        "source": "get_metadata",
+        "_adjust": {
+          "width": -1,
+          "_why": "Stroke rule — see .sb-row.is-active."
+        }
+      }
+    },
+    ".sb-status-text": {
+      "_node": "5181:197",
+      "_name": "Footer Text",
+      "_note": "The literal count is content. What the design fixes is that the footer and the Everything row show the SAME number — the app was reading 238 against 235 because savedCount counted archived bookmarks. Asserted as an invariant between two elements, which survives any fixture.",
+      "_numberMatches": ".sb-row.is-active .sb-count"
     }
   }
 }

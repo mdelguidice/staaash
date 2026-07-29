@@ -21,7 +21,10 @@ const LIBRARY = [
   { key: 'trash', name: 'Trash', Icon: TrashIcon, countKey: 'trash' }
 ]
 
-const COLLECTIONS_VISIBLE = 6
+// Figma's Collections Items frame (5181:89) holds five collection rows plus the
+// ••• More row. At 6 the app showed a sixth collection and pushed More a row
+// down, which is what made the sidebar run 40px past the design below Library.
+const COLLECTIONS_VISIBLE = 5
 
 export default function Sidebar({
   collapsed,

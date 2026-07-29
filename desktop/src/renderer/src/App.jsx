@@ -155,7 +155,13 @@ export default function App() {
     return c
   }, [bookmarks])
 
-  const savedCount = useMemo(() => bookmarks.filter((b) => !b.deleted_at).length, [bookmarks])
+  // Must match the Everything view's filter — the footer reads "N saved" beside
+  // a sidebar that says Everything N, and the two disagreeing by the archived
+  // count (238 vs 235) is exactly the drift the design shows as one number.
+  const savedCount = useMemo(
+    () => bookmarks.filter((b) => !b.deleted_at && !b.archived_at).length,
+    [bookmarks]
+  )
 
   const title =
     view.type === 'collection'

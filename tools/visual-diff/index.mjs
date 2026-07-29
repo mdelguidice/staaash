@@ -351,6 +351,7 @@ async function collectStyles(page, selectors, varNames, extraProps = []) {
           }
         }
         elements[sel]._occludedBy = occludedBy
+        elements[sel]._text = (el.textContent || '').replace(/\s+/g, ' ').trim()
       }
       return { tokens, elements, rects }
     },
@@ -451,6 +452,34 @@ function auditStyles(styles, spec, paintedBg = null, opts = {}) {
           isColour: !!(ea && aa),
           expectedHex: ea ? normHex(expected) : null,
           actualHex: aa ? normHex(actual) : null
+        })
+      }
+    }
+
+    // `_numberMatches: "<other selector>"` — the first integer in this element's
+    // text must equal the first integer in another element's. For a count shown
+    // in two places the DESIGN fixes that they agree; the CONTENT fixes what the
+    // number is, so the invariant is assertable where the literal value is not.
+    if (want._numberMatches) {
+      const other = styles.elements[want._numberMatches]
+      const num = (s) => {
+        const m = /-?\d[\d,]*/.exec(s || '')
+        return m ? m[0].replace(/,/g, '') : null
+      }
+      const a = num(got._text)
+      const b = num(other?._text)
+      if (other == null) {
+        findings.push({
+          selector: sel, property: 'number matches',
+          expected: `same count as ${want._numberMatches}`,
+          actual: `${want._numberMatches} not found`, source: 'invariant'
+        })
+      } else if (a == null || b == null || a !== b) {
+        findings.push({
+          selector: sel, property: 'number matches',
+          expected: `${want._numberMatches} → ${b ?? '(none)'}`,
+          actual: `${a ?? '(none)'}`,
+          source: 'invariant', isColour: false
         })
       }
     }

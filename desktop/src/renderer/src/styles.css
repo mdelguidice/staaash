@@ -172,12 +172,19 @@ select {
   color: var(--muted);
   padding: 20px 4px 8px;
 }
+/* The Library label is a bare 10px text node with an 8px gap below it
+   (5181:43 → 5181:44). The Collections and Tags labels are 24-tall header
+   frames with controls, sitting 2px above their list (5181:78 → 5181:89).
+   One padding cannot serve both, so the header variant gets its own. */
+.sb-label:has(button) {
+  padding-bottom: 2px;
+}
 .sb-label button {
   color: var(--muted-2);
   display: grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   border-radius: 6px;
   transition: color var(--dur-micro) ease, background-color var(--dur-micro) ease;
 }
@@ -217,11 +224,10 @@ select {
   height: 16px;
   flex: none;
   color: var(--text);
-  opacity: 0.85;
-  transition: opacity var(--dur-micro) ease;
-}
-.sb-row:hover .sb-ico {
-  opacity: 1;
+  /* Full strength, not 0.85. Figma strokes these at #F5FFE1 with no layer
+     opacity — sampled at 245 in the reference against the app's 210, which is
+     exactly 245 x 0.85. The row already has a hover background, so the icon
+     had no affordance left to carry. */
 }
 .sb-row-name {
   flex: 1;
