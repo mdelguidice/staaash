@@ -369,7 +369,7 @@ async function collectStyles(page, selectors, varNames, extraProps = []) {
  * Colours are compared channel-for-channel including alpha; lengths as
  * normalised strings; rects to within half a pixel.
  */
-function auditStyles(styles, spec, paintedBg = null) {
+function auditStyles(styles, spec, paintedBg = null, opts = {}) {
   const findings = []
   const skipped = []
   for (const [sel, want] of Object.entries(spec.selectors || {})) {
@@ -403,7 +403,18 @@ function auditStyles(styles, spec, paintedBg = null) {
       // element is what gets sampled. Under a scrim the answer is the scrim,
       // not a drift — skip loudly rather than reporting a colour the element
       // never painted.
-      if (method === 'painted' && got._occludedBy) {
+      if (method === 'painted' && opts.pixelTrusted === false) {
+        // The one style assertion that is NOT DOM-derived. When the captures
+        // disagreed it has to go with the rest of the pixel-derived output.
+        skipped.push({
+          selector: sel,
+          property: 'effective background',
+          reason:
+            'method "painted" reads the capture, and this screen\'s two captures ' +
+            'disagreed, so the sample is not trustworthy. Every other assertion on ' +
+            'this screen is DOM-derived and unaffected.'
+        })
+      } else if (method === 'painted' && got._occludedBy) {
         skipped.push({
           selector: sel,
           property: 'effective background',
@@ -891,9 +902,8 @@ async function main() {
       )
     }
 
-    // Capture twice, in two separate launches. A delta is only worth reporting
-    // if the capture it came from is reproducible, so disagreement is fatal for
-    // that screen rather than a footnote.
+    // Capture twice, in two separate launches. Disagreement suppresses the
+    // PIXEL-DERIVED output only — see the note where `pixelTrusted` is set.
     const captureOnce = () =>
       withApp({ cfg, screen, configDir }, async ({ page, settled }) => {
         const shot = await stableScreenshot(page)
@@ -917,6 +927,9 @@ async function main() {
 
     const capA = await captureOnce()
     let agreement = { captures: 1, identical: null, diffPixels: null }
+    // Cleared when the two captures disagree: everything derived from pixels is
+    // then untrustworthy, everything derived from the DOM is not.
+    let pixelTrusted = true
 
     if (!flag('single-capture')) {
       const capB = await captureOnce()
@@ -947,24 +960,19 @@ async function main() {
         `    capture  ${identical ? c.green('2/2 identical') : c.red(`2 captures DISAGREE (${cmp.exactDiffPixels.toLocaleString()} px exact, ${cmp.scoredDiffPixels.toLocaleString()} scored)`)}\n`
       )
       if (!identical) {
+        // Suppress the PIXEL-DERIVED output only, and carry on.
+        //
+        // Measured 2026-07-28 over six single-capture runs that landed in both
+        // render states: the style audit's findings were byte-identical across
+        // states (it reads the DOM, and the DOM is not what varies), while the
+        // colour leads moved 54 → 51 and the delta 2.022% → 2.109%. Withholding
+        // the whole screen threw away results that are provably unaffected.
         failed = true
+        pixelTrusted = false
         process.stdout.write(
-          `    ${c.red('refusing to report a delta for this screen')} ` +
-            `${c.dim('— run --calibrate to see what moved')}\n\n`
+          `    ${c.yellow('suppressing pixel delta + colour check for this screen')} ` +
+            `${c.dim('— style and token audits are unaffected and reported below')}\n`
         )
-        results.push({
-          id: screen.id,
-          figmaNodeId: screen.figmaNodeId ?? null,
-          frame: screen.frame,
-          window: { requested: [width, height], settled: capA.settled },
-          captureAgreement: agreement,
-          styleAudit: null,
-          colourCheck: null,
-          tokenAudit: null,
-          debug: { pixelDelta: null },
-          skipped: 'captures disagreed'
-        })
-        continue
       }
     }
 
@@ -984,7 +992,7 @@ async function main() {
       return modalFlatColor(appRaw.data, W, H, r, scale)?.hex || null
     }
     let styleAudit = null
-    if (styleSpec) styleAudit = auditStyles(capA.styles, styleSpec, paintedBg)
+    if (styleSpec) styleAudit = auditStyles(capA.styles, styleSpec, paintedBg, { pixelTrusted })
     const styleFindings = styleAudit?.findings ?? []
 
     // ── pixel delta (only possible with a reference) ─────────────────────────
@@ -994,7 +1002,7 @@ async function main() {
     let resampled = null
     let paths = null
 
-    if (ref) {
+    if (ref && pixelTrusted) {
       const figmaPng = await readFile(ref.path)
       const a = await toRaw(figmaPng, W, H)
       const b = appRaw
@@ -1090,6 +1098,9 @@ async function main() {
       await writeFile(join(OUT_DIR, `${screen.id}.app.png`), shotPng)
       paths = { shot: join(OUT_DIR, `${screen.id}.app.png`) }
     }
+    // `colourCheck: null` rather than `[]`, so a consumer can tell "suppressed,
+    // do not trust" from "ran, found nothing".
+    if (!pixelTrusted) colourCheck = null
 
     // ── token audit (independent of pixels, runs with or without a reference) ─
     const varsPath = [
@@ -1159,6 +1170,16 @@ async function main() {
       colourCheck,
       tokenAudit,
 
+      // Set when the two captures disagreed. styleAudit and tokenAudit above
+      // are still valid — they read the DOM — but everything under `debug` and
+      // `colourCheck` was suppressed.
+      pixelOutputSuppressed: !pixelTrusted
+        ? 'The two captures of this screen disagreed, so the pixel delta, the ' +
+          'region scores and the colour check were not reported. styleAudit and ' +
+          'tokenAudit read the DOM and are unaffected — measured identical across ' +
+          'both render states. See README, "Accepted, not fixing".'
+        : undefined,
+
       debug: {
         _why:
           'Pixel-delta numbers are diagnostic only — do not gate on them. They ' +
@@ -1207,7 +1228,9 @@ async function main() {
 
   if (failed) {
     console.error(
-      `  ${c.red('one or more screens had disagreeing captures — their deltas were withheld')}\n`
+      `  ${c.yellow('one or more screens had disagreeing captures')} ` +
+        `${c.dim('— pixel delta, region scores and colour check suppressed for those screens; ' +
+          'style and token audits above are unaffected')}\n`
     )
     process.exit(1)
   }

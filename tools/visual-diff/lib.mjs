@@ -147,6 +147,15 @@ export const STABILISE_CSS = `
      nothing, so :hover can never apply — and the Figma reference shows no
      hovered card either. Injected after the route steps, so clicks still work. */
   * { pointer-events: none !important; }
+  /* KEEP. .card-img-backdrop runs filter: blur(26px) behind every .is-contain
+     card. A blur that large is rasterised in tiles and the tiling was not
+     deterministic across launches, which is what made the everything screen
+     land in one of two render states on ~21% of runs. Neutralising it here took
+     calibration to 20/20 clean (p ≈ 0.9% against that baseline). The cost is
+     that the app capture no longer paints the backdrop while the Figma
+     reference does, so the whole-screen delta rises — acceptable because the
+     delta is diagnostic only and the style audit reads the DOM. */
+  .card-img-backdrop { filter: none !important; }
   /* Gallery.jsx scrolls the focused card into view with behavior:'smooth'
      (line 59). A smooth scroll is not a transition, so freezing transitions
      does not stop it, and a capture taken mid-scroll is stable but wrong. */

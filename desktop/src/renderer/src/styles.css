@@ -807,6 +807,15 @@ select {
   align-items: center;
   gap: 6px;
   padding: 4px 0 0;
+  /* Figma's meta row is a 24px-tall frame (5181:258) below a 4px gap, which is
+     what META_H reserves. The row was painting 19 — 4px padding plus a 15px
+     line box, because font-size 10px inherits the root 1.5 line-height — so
+     every card had 9px of reserved-but-unpainted space and the visible gap
+     between cards was 21 instead of 12. An explicit row height matches the
+     design's model (a fixed-height frame with centred content) rather than
+     leaning on the text's line box to produce it. box-sizing is border-box
+     globally, so this is the 4px gap plus the 24px row, matching META_H. */
+  min-height: 28px;
   font-size: 10px;
   color: var(--text-dim);
 }

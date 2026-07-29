@@ -6,6 +6,24 @@ Compares Figma frames against the real running app, pixel for pixel.
 node tools/visual-diff/index.mjs
 ```
 
+> ## 🔒 Maintenance mode — 2026-07-28
+>
+> **This tool runs and reports. It is not developed further.**
+>
+> Every screen that has a designed Figma frame is covered, and the findings that
+> remain are either closed (see "Accepted, not fixing") or app decisions waiting
+> on a product call, not harness gaps. Adding checks now would mean inventing
+> expectations the design does not state — which is exactly the failure mode
+> the assertion rule below exists to prevent.
+>
+> **What still happens:** run it, read `styleAudit`, act on findings. Fix it if
+> it breaks. Update `everything.styles.json` when the Figma frame changes.
+>
+> **What justifies reopening development:** new designed frames in Figma. The
+> settings modal and the drawer are the obvious two — both are mapped as screens
+> already and audit today, but neither has a design to diff against, so their
+> `figmaNodeId` is `null` and their specs are borrowed from `everything`.
+
 Standalone by design: it lives outside `desktop/`, has its own `node_modules`,
 and **changes no app code**. It launches the built Electron app and screenshots
 it against a seeded fixture database.
@@ -52,9 +70,20 @@ For every screen in [`visual-diff.config.mjs`](../../visual-diff.config.mjs):
 
 A delta is only worth reporting if the capture it came from is reproducible, so
 each screen is captured in **two independent launches** and the two are compared
-before anything is scored. If they disagree, the harness **refuses to report a
-delta for that screen**, records the disagreement, carries on with the remaining
-screens, and exits non-zero.
+before anything is scored.
+
+**On disagreement, only the pixel-derived output is suppressed.** The pixel
+delta, the region scores and the colour check are withheld; `styleAudit` and
+`tokenAudit` are reported as normal, and `report.json` carries a
+`pixelOutputSuppressed` note saying so. The run still exits non-zero.
+
+That split is measured, not assumed: across six runs landing in both render
+states, the style findings were byte-identical while the colour leads moved
+54 → 51 and the delta 2.022% → 2.109% (full table under "Known flake"). The
+style audit reads the DOM, and the DOM is not what varies. The one exception is
+an `_effectiveBackground` with `method: "painted"`, which samples the capture —
+that single assertion is skipped with a reason, like any other pixel-derived
+result.
 
 `report.json` records the outcome per screen:
 
@@ -82,45 +111,47 @@ On disagreement both frames and the mask are written
 is what made the 20px scroll shift diagnosable — the mask marks every
 byte-differing pixel, including ones `scorePixels` discards.
 
-### Known flake: `everything`, exactly 605,635 px
+### Resolved: the `everything` bistability was `filter: blur(26px)`
 
-`everything` disagrees with itself on roughly half of runs, always by **exactly
-605,635 pixels**. Bimodal, not noise — two stable rendering states.
+**Fixed 2026-07-28.** `everything` used to disagree with itself on ~21% of runs,
+always by exactly the same pixel count — bimodal, two stable rendering states.
+The cause was `.card-img-backdrop`'s `filter: blur(26px) saturate(1.15)
+brightness(0.55)`, which sits behind every `.is-contain` card. A blur that large
+is rasterised in tiles, and the tiling was not deterministic across launches.
 
-What is established:
+The fix is one line in `STABILISE_CSS`, applied at capture time only:
 
-- **Not layout, and not the sidebar.** Differences start at css x≥240 and
-  concentrate in css y 120–480. 73% of them are Δ1–2, max Δ108. Cropping both
-  frames at the busiest area shows identical content in identical positions.
-- **The blurred card backdrops.** `.card-img-backdrop` runs
-  `filter: blur(26px) saturate(1.15) brightness(0.55)` behind every `.is-contain`
-  card, and the differing pixels track those regions. `.card` also carries
-  `content-visibility: auto`, so a card has more than one route to its first
-  paint.
-- **Pre-existing.** Reverting `styles.css` to HEAD and re-calibrating reproduced
-  the flake at the *same* 605,635 px, so it is not caused by the sidebar work.
-- **The pixel count tracks the card positions.** It was 605,635 with
-  `META_H = 24`, and moved to 600,880 the moment `META_H` became 28 and the
-  cards shifted. Whatever differs is drawn where the cards are.
+```css
+.card-img-backdrop { filter: none !important; }
+```
 
-**`content-visibility: auto` has been ruled out.** 20 calibrations per arm,
-arms alternating run-by-run so machine drift hits both equally:
+| Arm | Disagreements | Rate |
+|---|---|---|
+| baseline | 4/19 | 21% |
+| `content-visibility: visible` | 5/19 | 26% |
+| **blur neutralised** | **0/20** | **0%** |
 
-| Arm | Disagreements | Rate | Constant |
-|---|---|---|---|
-| baseline (`contentVisibility: 'auto'`) | 4/19 | 21% | 605,635 px |
-| treatment (`contentVisibility: 'visible'`) | 5/19 | 26% | 606,052 px |
+Twenty consecutive clean calibrations against a 21% baseline is p ≈ 0.9%.
 
-(One run per arm errored and is excluded.) Disabling it did not reduce the flake
-— the treatment rate is nominally *higher*, and the treatment arm is still
-bimodal on its own single constant, just a different one because more cards
-render. The remaining suspect is `.card-img-backdrop`'s `filter: blur(26px)`.
+Getting there took four arms, three of which were wrong, and the useful part is
+why the last one was findable: **the disagreement was always the same pixel
+count**, and that count moved — 605,635 → 600,880 — the moment `META_H` shifted
+the cards. A constant that tracks card position is a constant produced by
+something drawn at the cards. Rejected along the way, each recorded so nobody
+retries them blind: `content-visibility: auto` (20 runs per arm),
+`--num-raster-threads=1` (1/5) and `--disable-checker-imaging` (2/6) against a
+4/8 baseline. None shipped.
 
-Also rejected earlier, on weaker evidence: `--num-raster-threads=1` (1/5) and
-`--disable-checker-imaging` (2/6) against a 4/8 baseline. Neither was shipped.
+**What neutralising the blur costs.** The app capture no longer paints the
+blurred backdrop while the Figma reference still does, so the whole-screen delta
+rises. That is acceptable precisely because the delta is diagnostic and lives
+under `debug` — nothing gates on it — and the alternative was a harness that
+could not report reproducibly at all. The style audit reads the DOM and is
+unaffected either way.
 
-**What the flake does and does not affect** — measured over six single-capture
-runs, which landed in exactly two capture states:
+**What the flake did and did not affect, while it lasted** — measured over six
+single-capture runs landing in both states. This is the evidence behind
+suppressing only pixel-derived output on disagreement:
 
 | | State A (4 runs) | State B (2 runs) |
 |---|---|---|
@@ -129,14 +160,9 @@ runs, which landed in exactly two capture states:
 | colour **leads** | 54 | **51** |
 | pixel delta | 2.022% | **2.109%** |
 
-**The style audit is immune** — it reads the DOM, and its output was
-byte-identical across both states. The colour leads and the pixel delta are
-state-dependent: deterministic within a state, different between them. So a
-disagreeing capture invalidates the delta and the leads, not the findings.
-
-Note the reporting difference the byte-exact gate buys: the tolerant comparator
-scores the same disagreement at **0.07% (3,218 px)**, which reads as noise,
-while 13.3% of the frame genuinely differs.
+Also worth keeping: the tolerant comparator scored that disagreement at
+**0.07% (3,218 px)**, which reads as noise, while 13.3% of the frame genuinely
+differed. The byte-exact gate is what made it visible.
 
 ### Region scores can be blind
 
@@ -309,53 +335,65 @@ Only `position: fixed` counts — that is what overlays are; absolutely-position
 siblings inside a scroller are not. The fix for a screen that legitimately needs
 the value is its own spec with `method: "computed"`.
 
-### Text-sized elements
+### What may be asserted
 
-Do not assert width/height on anything sized by its own text — a font-metric
-difference of a fraction of a pixel then reads as a geometry failure. Assert
-position, padding and type instead. `.seg` and the count badge are set up this
-way. For *which* position to assert, see "Right-anchored boxes" below.
+**Assert only quantities the design determines. Never assert quantities the
+content determines.**
 
-### Never assert only the first item of a list
+| The design determines | The content determines |
+|---|---|
+| proportions, spacing, gaps, padding | item counts and list totals |
+| colour, type, radii, strokes | any size derived from text or glyphs |
+| positions anchored to a fixed edge | any position downstream of the above |
 
-**A first-item assertion passes whenever the container's origin is correct, and
-is blind to every per-item accumulation below it.** That is not a hypothetical:
-the sidebar audit passed for weeks with `.sb-row.is-active` exact at y=70 while
-the app was omitting an 8px gap between *every* row, so the list ran 32px short
-by the Collections header.
+Every assertion withdrawn from this spec was withdrawn under that one rule, and
+each corollary below was paid for by one of them.
 
-For any repeated or mapped list, **assert the last item the design draws**, and
-keep the first only as an origin check. Both together localise a failure — first
-passing and last failing means accumulation; both failing means the origin.
+**1. Lists.** A first-item assertion passes whenever the container's origin is
+correct and is blind to every per-item accumulation below it — the sidebar audit
+passed for weeks with `.sb-row.is-active` exact at y=70 while the app omitted an
+8px gap between *every* row, running 32px short by the Collections header. So
+assert the **last item**, keeping the first as an origin check: first passing and
+last failing means accumulation, both failing means the origin.
 
-Two traps when picking "last":
+But only where **the design fixes the list's length**. The five Library
+categories are hardcoded in `Sidebar.jsx` and match Figma, so the Trash row is
+assertable. `.sb-more` was not — it compared Figma's five mock collections
+against the fixture's seven, which is a content-count difference wearing
+geometry's clothes. Withdrawn.
 
-- **The DOM's last item may not be the design's.** The fixture seeds the whole
-  library — 235 cards, 26,879px of grid — while the Figma frame lays out the 8
-  above the fold. `.masonry` height and `:last-child` are not comparable
-  quantities; card 8 is. Container total height only works when both sides
-  contain the same items.
-- **Both sides must order identically.** The masonry places shortest-column-
-  first, which is deterministic, so card 8 lands third in column 1 in both. If
-  ordering were content-dependent, the assertion would be measuring the fixture.
+Where the last item is not assertable, **the accumulation is not assertable
+either**. That is a limit to record, not to work around.
 
-The sweep is recorded in `_listRule` at the top of the styles file, including
-lists that are deliberately **not** assertable (tags: hidden in Figma, empty in
-the fixture — no list on either side).
+**2. Anchored edges.** `_rect` accepts `right` and `bottom` as well as
+`x`/`y`/`width`/`height`. For a text-sized box, assert the edge the design
+anchors, not the one its glyphs move — `x` on a trailing-anchored box carries
+the box's own glyph width, which is the same mistake as asserting its width.
 
-### Right-anchored boxes: assert the edge that is actually anchored
+**Verify the edge really is anchored.** The count badge's is: it is the last
+flex child of `.sb-row` with the name flexing, so switching `x` → `right`
+cleared it outright. `.seg`'s is not: it sits left of `.btn-new`, which is
+itself text-sized, so its right edge inherits that neighbour's glyph width
+(`.btn-new` measures 60.56 against Figma's 60 — the entire 0.56px residual).
+Neither of `.seg`'s horizontal edges is anchored to anything the design fixes,
+so neither is asserted.
 
-`_rect` accepts `right` and `bottom` as well as `x`/`y`/`width`/`height`. For a
-text-sized box pinned to a trailing edge, `x` carries the box's own glyph width
-— asserting it is the same mistake as asserting the width. Assert `right`.
+**3. Accumulation.** An accumulated position is assertable only if **every term
+in it** is design-determined. Masonry card 8's y accumulates per-card media
+heights, and a card's aspect bucket comes from a hash of its bookmark id — so
+the assertion measured the fixture. Withdrawn; the 25.58px drift it found is
+recorded on `.card-media` as `_cardAspectDrift` instead, which states the
+finding without pretending it is a check.
 
-**Check that the edge really is anchored first.** The count badge is: it is the
-last flex child of `.sb-row` with the name flexing, so its trailing edge is
-fixed and asserting `right` clears what `x` could not. `.seg` is *not*: it sits
-left of `.btn-new`, which is itself text-sized, so its right edge inherits that
-neighbour's glyph width. Asserting `right` there cut the error from 2.90px to
-0.56px but could not clear it, because neither of its edges is anchored to
-anything fixed. Measured cause: `.btn-new` is 60.56 wide against Figma's 60.
+The design-determined alternative is not clean either, and the reason is worth
+knowing: the third column's x accumulates two column widths and two gutters, but
+Figma's own frame pads 20px on the left and 21px on the right, so its columns
+imply 365.0 where the app computes 365.33. That 0.67px is the design's rounding,
+not the app's.
+
+Withdrawn and non-assertable quantities are listed in `_notAssertable` at the
+top of the styles file, so their absence reads as a decision rather than an
+oversight.
 
 ### Strokes and layout
 
@@ -648,6 +686,64 @@ Caveats worth knowing:
 - Card artwork is cropped from the reference, so it cannot disagree. Image
   *rendering* (fit, radius, letterboxing) is still compared; image *content* is
   deliberately neutralised.
+
+## Accepted, not fixing
+
+Closed as of 2026-07-28. Each of these was investigated to a conclusion; none is
+waiting on anyone. They are listed so their absence from the findings is a
+decision on the record rather than something that fell off the list.
+
+**The ask-bar Δ2 colour drift.** Two flat-colour pairs in the ask-bar region
+differ by 1–2 of 255. *Closed because it is correctly classified already.* It is
+a `lead`, not a finding: the style audit has nothing to say about it, because
+`.ask`'s effective background is 92% translucent over a `backdrop-filter` blur
+and the composited value depends on blur parameters the design does not state.
+Diagnosed wrongly twice — once as geometry, once as padding — and both times the
+fix landed and the drift did not move. Δ2 is also a fifth of what `pixelmatch`
+can see at all, so nothing downstream depends on it.
+
+**`.seg right` — 0.56px.** *Closed because the quantity is not assertable, not
+because the difference is acceptable.* `.seg` sits left of `.btn-new`, which is
+text-sized, so its right edge carries that neighbour's glyph width (60.56 against
+Figma's 60 — the whole residual). Neither of its horizontal edges is anchored to
+anything the design fixes, so the assertion was withdrawn under "What may be
+asserted" rather than left failing.
+
+> `.seg y` was on this list and came off it. It is not a text-sized-box problem
+> — it is the stroke rule. Figma's control is 32 tall with a non-layout stroke;
+> the app draws that stroke as a border, making it 34, and the topbar centres
+> both on y=35, so the app's top edge sits 1px higher. A `_rect._adjust` of
+> `y: -1` clears it.
+
+**`confirmed` is reachable but unpopulated.** The colour check's upper tier has
+no members on any screen. *Closed because that is the correct state, not a gap.*
+Reachability was demonstrated by deliberately breaking `--sidebar` to 2% and
+watching a finding promote, then reverting. Nothing qualifies today because the
+colour assertions pass — and after colour corroboration was type-gated, the
+three findings that used to sit in the middle tier were revealed as positional
+coincidences and correctly became leads.
+
+**The light theme is unasserted.** `[data-theme='light']` overrides fifteen
+tokens and nothing checks any of them. *Closed because there is no light-mode
+frame in Figma to check against.* Asserting it would mean inventing expected
+values, which is the failure mode the assertion rule exists to prevent. This is
+the clearest candidate for reopening development if a light design is drawn.
+
+**`.card-media`'s outline on `drawer-open` — 2px `rgba(245,255,225,0.5)`.** The
+only finding left on any screen. *Closed because it is the spec being borrowed,
+not a drift.* `drawer-open` has no design of its own so it reuses `everything`'s
+spec, and the route opens the drawer from the first card — which focuses it, and
+`.card.is-focused .card-media` correctly swaps the hairline for a focus ring.
+The assertion is reading a state the borrowed spec does not describe. It
+disappears the day `drawer-open` gets a designed frame and its own spec.
+
+**`.sb`'s colour spec came from Mike, not from `get_design_context`.** The
+sidebar is specified as `#F6F3F3` at 1% over `#080808` with a `#FAFFE6` 6%
+stroke, supplied in conversation. *Closed because it has been corroborated
+independently:* the token audit passes 9/9 against `get_variable_defs`, and the
+painted value the sampler reads matches the composite. The provenance is
+recorded in the spec's `_note` so a future reader knows which assertions rest on
+a stated value rather than a queried one.
 
 ## Sensitivity — what the harness can actually see
 
