@@ -33,6 +33,7 @@ const INVOKE_CHANNELS = [
   'data:export-html',
   'data:import',
   'health:sweep',
+  'images:size-sweep',
   'images:ensure',
   'media:rescan'
 ]

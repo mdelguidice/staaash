@@ -5,6 +5,8 @@ import { ipcMain, shell, dialog, clipboard, app } from 'electron'
 import { readFile, writeFile } from 'node:fs/promises'
 import * as db from './db.js'
 import { extractMeta, cacheImage, checkLink, cleanText, fetchFavicon } from './extract.js'
+import { imageSize } from './imageSize.js'
+import { join } from 'node:path'
 import { askStaaash, suggestCollection } from './ai.js'
 
 // Smart URL input: auto-prepend https://
@@ -242,6 +244,28 @@ export function registerIpc(getWindow) {
     }
     notify('bookmarks:changed')
     return { ok: true, imported }
+  })
+
+  // ── Preview-size backfill ──
+  // Cards take their image's shape, and the masonry needs every size before it
+  // can place anything — so sizes live on the record. Measuring them here, in
+  // one pass over the cached files, is what stops an upgraded library from
+  // reflowing card by card as the user scrolls into it. Reads headers only.
+  handle('images:size-sweep', async () => {
+    const targets = db
+      .listBookmarks()
+      .filter((b) => !b.deleted_at && b.image_path && !(b.image_w > 0 && b.image_h > 0))
+    let measured = 0
+    for (const b of targets) {
+      const size = await imageSize(join(db.imagesDir(), b.image_path))
+      if (!size) continue
+      db.updateBookmark(b.id, { image_w: size.w, image_h: size.h })
+      measured++
+    }
+    // One notification for the whole pass, not one per card — the layout should
+    // settle once rather than shuffle as each measurement lands.
+    if (measured) notify('bookmarks:changed')
+    return { ok: true, scanned: targets.length, measured }
   })
 
   // ── Dead-link background sweep (links unchecked in 7+ days) ──

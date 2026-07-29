@@ -666,7 +666,13 @@ The top-level output is `styleAudit`, `colourCheck` and `tokenAudit`. Those read
 the DOM and sample exact pixels, so they name the property and the element. The
 delta is for eyeballing the side-by-side and for spotting gross breakage.
 
-Two divergences the delta currently surfaces, both real:
+Divergences the delta used to surface, now closed: the collections list
+(`COLLECTIONS_VISIBLE` was 6 against the design's 5) and the status pill
+(`savedCount` counted archived bookmarks, reading 238 against 235). Both are
+asserted now — the second via `_numberMatches`, which checks the footer and the
+Everything badge agree rather than checking a literal count.
+
+Historic note, kept because the shape of the mistake recurs:
 
 - **Collections list.** The design shows five collections then `••• More`; the
   code's `COLLECTIONS_VISIBLE` is 6, so `More` only appears at seven or more and

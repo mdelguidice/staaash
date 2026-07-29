@@ -104,6 +104,16 @@ function migrateSchema(db) {
   if (!cols.includes('favicon_path')) {
     db.exec('ALTER TABLE bookmarks ADD COLUMN favicon_path TEXT')
   }
+  // Intrinsic size of the cached preview. The gallery gives each card its
+  // image's own shape, and the masonry places every card before any of them
+  // paint — so this has to be readable from the record, not from the <img>.
+  // Null means "not measured yet"; cardAspect falls back until it is.
+  if (!cols.includes('image_w')) {
+    db.exec('ALTER TABLE bookmarks ADD COLUMN image_w INTEGER')
+  }
+  if (!cols.includes('image_h')) {
+    db.exec('ALTER TABLE bookmarks ADD COLUMN image_h INTEGER')
+  }
 }
 
 // ── URL normalization (dedup) ──
@@ -213,7 +223,7 @@ export function insertBookmark(fields) {
 const UPDATABLE = new Set([
   'url', 'title', 'domain', 'summary', 'image_url', 'image_path', 'favicon_path', 'read_at', 'archived_at',
   'deleted_at', 'favorited', 'source', 'hn_url', 'note', 'content', 'last_checked', 'is_dead',
-  'collection_id'
+  'collection_id', 'image_w', 'image_h'
 ])
 
 export function updateBookmark(id, patch) {

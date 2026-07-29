@@ -99,10 +99,16 @@ export default function App() {
     return () => offs.forEach((off) => off())
   }, [reload])
 
-  // Background dead-link sweep, once per session, off the critical path
+  // Background sweeps, once per session, off the critical path.
+  // Preview sizes first and sooner: until they are measured the gallery falls
+  // back to hashed card shapes, so this is the pass that settles the layout.
   useEffect(() => {
-    const t = setTimeout(() => api['health:sweep']().catch(() => {}), 8000)
-    return () => clearTimeout(t)
+    const sizes = setTimeout(() => api['images:size-sweep']().catch(() => {}), 1200)
+    const health = setTimeout(() => api['health:sweep']().catch(() => {}), 8000)
+    return () => {
+      clearTimeout(sizes)
+      clearTimeout(health)
+    }
   }, [])
 
   useEffect(() => {

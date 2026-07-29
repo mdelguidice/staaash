@@ -175,7 +175,10 @@ if (!existsSync(refPath)) {
       })
       .png()
       .toFile(join(seeded.imagesDir, name))
-    written.push({ id: r.id, name })
+    // Record the crop's pixel size: cards take their image's shape, so this is
+    // what the app lays out from. w/h are the app-measured card-media box at
+    // capture scale, so the seeded image's ratio IS the card's ratio.
+    written.push({ id: r.id, name, w: Math.round(w), h: Math.round(h) })
   }
 
   // Point the seeded rows at the crops. Runs inside Electron for the same

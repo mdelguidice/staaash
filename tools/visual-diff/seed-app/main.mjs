@@ -26,26 +26,20 @@ app.getPath = (name) => (name === 'appData' ? APPDATA : realGetPath(name))
 app.setName('staaash')
 app.setPath('userData', join(APPDATA, 'staaash'))
 
-/** Mirrors renderer/src/lib/format.js cardAspect(). Kept in sync deliberately. */
-const CARD_ASPECTS = [1.78, 1.6, 1.42, 1.25, 1.0, 1.0, 0.85]
-function aspectIndex(id) {
-  let h = 7
-  const s = String(id)
-  for (let i = 0; i < s.length; i++) h = (h * 33 + s.charCodeAt(i)) >>> 0
-  return h % CARD_ASPECTS.length
-}
-
-/** Find an id of the form `<slug>-<n>` whose hash lands on the wanted aspect. */
-function idForAspect(slug, aspect) {
-  const wanted = CARD_ASPECTS.indexOf(aspect)
-  if (wanted === -1) throw new Error(`aspect ${aspect} is not one of ${CARD_ASPECTS.join(', ')}`)
-  for (let n = 0; n < 200000; n++) {
-    const id = `fx-${slug}-${n}`
-    const idx = aspectIndex(id)
-    if (CARD_ASPECTS[idx] === aspect) return id
-  }
-  throw new Error(`no id found for ${slug} @ ${aspect}`)
-}
+/**
+ * Card shape used to come from a hash of the bookmark id, so the seeder had to
+ * brute-force an id whose hash landed on the wanted CARD_ASPECTS bucket. Cards
+ * now take their image's shape instead, so the id is free and the aspect is
+ * seeded directly as image_w/image_h — which is also what breaks the old
+ * circularity: pass 1 laid out at bucket aspects, pass 2 cropped the reference
+ * at those rects, and the resulting images could only ever re-assert the
+ * buckets. Seeding the size up front lets pass 1 lay out at the DESIGN's
+ * ratios, so the crops land on the design's card boxes.
+ *
+ * Nominal width only — the app reads the ratio, not the pixels.
+ */
+const NOMINAL_W = 1000
+const sizeForAspect = (aspect) => ({ w: NOMINAL_W, h: Math.round(NOMINAL_W / aspect) })
 
 const iso = (daysAgo) => new Date(Date.now() - daysAgo * 86400_000).toISOString()
 
@@ -60,9 +54,16 @@ app.whenReady().then(async () => {
     if (PATCH_PATH) {
       const handle = db.openDb()
       const rows = JSON.parse(readFileSync(PATCH_PATH, 'utf8'))
-      const stmt = handle.prepare('UPDATE bookmarks SET image_path = ? WHERE id = ?')
+      // image_w/image_h as well as the path: cards take their image's shape,
+      // and the masonry reads the size off the record before anything paints.
+      // Without these the app would fall back to hashed shapes here, and the
+      // background size-sweep would then WRITE them into the fixture database
+      // on the first harness run — making run 1 differ from run 2.
+      const stmt = handle.prepare(
+        'UPDATE bookmarks SET image_path = ?, image_w = ?, image_h = ? WHERE id = ?'
+      )
       const tx = handle.transaction((list) => {
-        for (const r of list) stmt.run(r.name, r.id)
+        for (const r of list) stmt.run(r.name, r.w ?? null, r.h ?? null, r.id)
       })
       tx(rows)
       result.ok = true
@@ -93,7 +94,7 @@ app.whenReady().then(async () => {
     // stops being reproducible. Offset each card by a minute to force a total
     // order — small enough that it never changes the "N days ago" label.
     const cards = spec.cards.map((c, i) => {
-      const id = idForAspect(c.slug, c.aspect)
+      const id = `fx-${c.slug}`
       db.insertBookmark({
         id,
         url: c.url,
@@ -102,6 +103,10 @@ app.whenReady().then(async () => {
         created_at: iso(c.daysAgo + i / 1440),
         source: 'fixture'
       })
+      // Seed the shape before any image exists, so pass 1 lays the grid out at
+      // the design's ratios rather than at whatever the id happens to hash to.
+      const { w, h } = sizeForAspect(c.aspect)
+      db.updateBookmark(id, { image_w: w, image_h: h })
       return { id, slug: c.slug, aspect: c.aspect }
     })
 

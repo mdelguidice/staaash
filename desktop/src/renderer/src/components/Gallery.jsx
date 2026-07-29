@@ -44,7 +44,7 @@ export default function Gallery({
     const colW = (width - GAP_X * (cols - 1)) / cols
     const heights = new Array(cols).fill(0)
     const placements = items.map((b, idx) => {
-      const h = colW / cardAspect(b.id) + META_H
+      const h = colW / cardAspect(b) + META_H
       const col = heights.indexOf(Math.min(...heights))
       const x = col * (colW + GAP_X)
       const y = heights[col]
@@ -103,7 +103,7 @@ function Card({
   const [natural, setNatural] = useState(0)
   const [heartAnim, setHeartAnim] = useState('')
   const src = imageSrc(b)
-  const contain = shouldContain(b.id, natural)
+  const contain = shouldContain(b, natural)
 
   // Backfill the local cache for remote-only previews so the gallery works offline
   useEffect(() => {
@@ -131,7 +131,7 @@ function Card({
       aria-label={b.title || b.url}
       style={{ contentVisibility: 'auto', containIntrinsicSize: '320px' }}
     >
-      <div className="card-media" style={{ aspectRatio: cardAspect(b.id) }}>
+      <div className="card-media" style={{ aspectRatio: cardAspect(b) }}>
         {src && !imgFailed ? (
           <>
             {contain && (

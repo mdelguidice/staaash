@@ -35,22 +35,56 @@ export function hashColor(id) {
 
 // Deterministic per-bookmark card shape — a weighted mix of landscape,
 // square, and portrait so the masonry reads varied, not uniform.
+// Shapes for cards whose preview has not been measured yet, and for cards with
+// no preview at all. Deterministic per id so the grid is stable across renders.
 const CARD_ASPECTS = [1.78, 1.6, 1.42, 1.25, 1.0, 1.0, 0.85]
 
-export function cardAspect(id) {
+// A card that is much wider or much taller than these reads as a banner or a
+// column rather than a card, and one very tall image would dominate its whole
+// column. Outside the range the card is clamped and the image letterboxes
+// instead — which is what shouldContain then detects.
+export const CARD_ASPECT_MIN = 0.7
+export const CARD_ASPECT_MAX = 2.1
+
+function hashedAspect(id) {
   let h = 7
   const s = String(id)
   for (let i = 0; i < s.length; i++) h = (h * 33 + s.charCodeAt(i)) >>> 0
   return CARD_ASPECTS[h % CARD_ASPECTS.length]
 }
 
+/**
+ * The shape a card takes.
+ *
+ * Its image's own proportions where we know them — the design draws thumbnails
+ * at their natural ratios (365x195 and 365x350, i.e. 1.872 and 1.043), not at
+ * shapes assigned to them, and a hash cannot land on a ratio that is not in its
+ * bucket list. Falls back to the hashed bucket for cards with no preview, and
+ * for previews not yet measured (image_w/image_h are backfilled in the
+ * background, so an upgraded library converges rather than reflowing at once).
+ *
+ * Accepts a bookmark or a bare id; the id form always uses the fallback.
+ */
+export function cardAspect(bookmarkOrId) {
+  const b = bookmarkOrId
+  if (b && typeof b === 'object') {
+    const w = Number(b.image_w)
+    const h = Number(b.image_h)
+    if (w > 0 && h > 0) {
+      return Math.min(CARD_ASPECT_MAX, Math.max(CARD_ASPECT_MIN, w / h))
+    }
+    return hashedAspect(b.id)
+  }
+  return hashedAspect(b)
+}
+
 // When the card shape deviates this far from the image's natural ratio,
 // the card letterboxes the full image over a blurred fill instead of
 // cover-cropping — text-heavy OG banners stay legible.
-export function shouldContain(id, naturalAspect) {
+export function shouldContain(bookmarkOrId, naturalAspect) {
   if (!naturalAspect) return false
-  const bucket = cardAspect(id)
-  return bucket < naturalAspect * 0.9 || bucket > naturalAspect * 1.25
+  const shape = cardAspect(bookmarkOrId)
+  return shape < naturalAspect * 0.9 || shape > naturalAspect * 1.25
 }
 
 export function faviconSrc(bookmark) {
