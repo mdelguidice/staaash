@@ -27,14 +27,12 @@ app.setName('staaash')
 app.setPath('userData', join(APPDATA, 'staaash'))
 
 /**
- * Card shape used to come from a hash of the bookmark id, so the seeder had to
- * brute-force an id whose hash landed on the wanted CARD_ASPECTS bucket. Cards
- * now take their image's shape instead, so the id is free and the aspect is
- * seeded directly as image_w/image_h — which is also what breaks the old
- * circularity: pass 1 laid out at bucket aspects, pass 2 cropped the reference
- * at those rects, and the resulting images could only ever re-assert the
- * buckets. Seeding the size up front lets pass 1 lay out at the DESIGN's
- * ratios, so the crops land on the design's card boxes.
+ * The aspect is seeded directly as image_w/image_h, which is what breaks the
+ * circularity the fixture used to have: pass 1 laid out at whatever shape the
+ * app assigned, pass 2 cropped the reference at those rects, and the resulting
+ * images could only ever re-assert the assignment. Seeding the size up front
+ * lets pass 1 lay out at the DESIGN's ratios, so the crops land on the design's
+ * own card boxes.
  *
  * Nominal width only — the app reads the ratio, not the pixels.
  */
@@ -60,7 +58,10 @@ app.whenReady().then(async () => {
       // background size-sweep would then WRITE them into the fixture database
       // on the first harness run — making run 1 differ from run 2.
       const stmt = handle.prepare(
-        'UPDATE bookmarks SET image_path = ?, image_w = ?, image_h = ? WHERE id = ?'
+        `UPDATE bookmarks
+            SET image_path = ?, image_w = ?, image_h = ?,
+                preview_source = 'og', focal_y = 0.5
+          WHERE id = ?`
       )
       const tx = handle.transaction((list) => {
         for (const r of list) stmt.run(r.name, r.w ?? null, r.h ?? null, r.id)
@@ -104,9 +105,12 @@ app.whenReady().then(async () => {
         source: 'fixture'
       })
       // Seed the shape before any image exists, so pass 1 lays the grid out at
-      // the design's ratios rather than at whatever the id happens to hash to.
+      // the design's ratios rather than at a fallback constant. preview_source
+      // goes in for the same reason the size does: the backfill sweep selects
+      // rows missing it, and a sweep that writes to the fixture on run 1 makes
+      // run 1 differ from run 2. The Figma crops stand in for og:images.
       const { w, h } = sizeForAspect(c.aspect)
-      db.updateBookmark(id, { image_w: w, image_h: h })
+      db.updateBookmark(id, { image_w: w, image_h: h, preview_source: 'og', focal_y: 0.5 })
       return { id, slug: c.slug, aspect: c.aspect }
     })
 

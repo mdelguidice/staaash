@@ -1,7 +1,7 @@
 /**
  * Intrinsic pixel dimensions from an image file's header.
  *
- * Cards take the shape of their image (see cardAspect in lib/format.js), and
+ * Cards take the shape of their image (see cardShape in lib/format.js), and
  * the masonry places every card before any of them paint — so the size has to
  * be known ahead of layout, not read off the <img> once it loads. Reading it
  * here, from the bytes already on disk, keeps that synchronous at render time.
@@ -43,6 +43,36 @@ function fromBuffer(buf) {
       }
     }
     return null
+  }
+
+  // AVIF / HEIC — an ISO base media file, not a JPEG, despite arriving with a
+  // .jpg name and a JPEG content-type. Five of 243 previews in a real library
+  // were exactly this, and every one of them was invisible to the parser until
+  // this branch existed: no dimensions meant a fallback shape, which meant a
+  // hard cover-crop on a card that had no business cropping.
+  //
+  // The size lives in an `ispe` box (ISO/IEC 23008-12), width/height as two
+  // big-endian uint32 after a 4-byte version/flags field. `ispe` sits several
+  // boxes deep (meta > iprp > ipco), and scanning for the fourcc rather than
+  // walking the tree is deliberate: the walk needs five container types handled
+  // correctly to reach the same four bytes.
+  //
+  // The FIRST ispe is the primary item's in every file produced by a real
+  // encoder. A file with thumbnails can carry more, so a later, smaller ispe is
+  // ignored rather than allowed to win.
+  if (buf.length > 12 && buf.toString('ascii', 4, 8) === 'ftyp') {
+    const brand = buf.toString('ascii', 8, 12)
+    const isHeif = ['avif', 'avis', 'heic', 'heix', 'hevc', 'mif1', 'msf1'].includes(brand)
+    if (isHeif) {
+      const at = buf.indexOf('ispe', 0, 'ascii')
+      // 4 fourcc + 4 version/flags + 8 dimensions must all be present.
+      if (at > 0 && at + 16 <= buf.length) {
+        const w = buf.readUInt32BE(at + 8)
+        const h = buf.readUInt32BE(at + 12)
+        if (w > 0 && h > 0) return { w, h }
+      }
+      return null
+    }
   }
 
   // JPEG — walk the segment chain to the first SOF marker.

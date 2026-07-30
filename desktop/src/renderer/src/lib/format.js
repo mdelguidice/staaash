@@ -33,58 +33,83 @@ export function hashColor(id) {
   return TAG_COLORS[h % TAG_COLORS.length]
 }
 
-// Deterministic per-bookmark card shape — a weighted mix of landscape,
-// square, and portrait so the masonry reads varied, not uniform.
-// Shapes for cards whose preview has not been measured yet, and for cards with
-// no preview at all. Deterministic per id so the grid is stable across renders.
-const CARD_ASPECTS = [1.78, 1.6, 1.42, 1.25, 1.0, 1.0, 0.85]
+/**
+ * The tallest a card may be, as a multiple of the column width.
+ *
+ * Cards otherwise take their image's exact proportions, so this only ever binds
+ * on the portrait tail. Measured against a real 293-row library: the aspect
+ * histogram has nothing at all between 0.564 and 0.769, so every candidate from
+ * 1.3x to 1.75x clamps the same five images (all Instagram, all ~361x640) and
+ * the choice only changes how much of them is cropped — 27% at 1.3x, 15% at
+ * 1.5x, 1% at 1.75x.
+ *
+ * 1.5x is where the old letterbox mechanism dies rather than merely idles. That
+ * mechanism triggered when the card's shape differed from the image's by more
+ * than -10%/+25%; a 1.5x clamp on a 0.564 image lands inside that tolerance, so
+ * no card can request a letterbox any more. Nothing has to decide between
+ * letterboxing and cropping because only one of them still exists.
+ */
+export const MAX_CARD_TALLNESS = 1.5
+const MIN_CARD_ASPECT = 1 / MAX_CARD_TALLNESS
 
-// A card that is much wider or much taller than these reads as a banner or a
-// column rather than a card, and one very tall image would dominate its whole
-// column. Outside the range the card is clamped and the image letterboxes
-// instead — which is what shouldContain then detects.
-export const CARD_ASPECT_MIN = 0.7
-export const CARD_ASPECT_MAX = 2.1
+/**
+ * The shape of a card whose preview has not been measured.
+ *
+ * 1.905 is 1200x630 — the og:image convention, and 70.4% of a real library sits
+ * on it exactly. For an unmeasured card any constant is a guess, so the guess is
+ * the modal ratio: it minimises the expected crop when the image does arrive,
+ * and it keeps the grid from reflowing when a measurement lands on the common
+ * case. Reached by 6 rows of 243, all of them files the header parser cannot
+ * read (see imageSize.js).
+ */
+const UNMEASURED_ASPECT = 1.905
 
-function hashedAspect(id) {
-  let h = 7
-  const s = String(id)
-  for (let i = 0; i < s.length; i++) h = (h * 33 + s.charCodeAt(i)) >>> 0
-  return CARD_ASPECTS[h % CARD_ASPECTS.length]
+/**
+ * The shape a card takes: its image's own proportions, clamped at the tall end.
+ *
+ * Always derived from the RECORD, never from the loaded <img> — the masonry
+ * places every card before any of them paint, so a shape that arrived with the
+ * image would reflow the whole grid underneath the user.
+ */
+export function cardShape(b) {
+  const w = Number(b?.image_w)
+  const h = Number(b?.image_h)
+  if (!(w > 0 && h > 0)) return UNMEASURED_ASPECT
+  return Math.max(MIN_CARD_ASPECT, w / h)
+}
+
+/** True when the clamp bound, so the card shows less than the whole image. */
+export function isCropped(b) {
+  const w = Number(b?.image_w)
+  const h = Number(b?.image_h)
+  return w > 0 && h > 0 && w / h < MIN_CARD_ASPECT
 }
 
 /**
- * The shape a card takes.
+ * Where to hold the image when a card crops it, as a CSS object-position.
  *
- * Its image's own proportions where we know them — the design draws thumbnails
- * at their natural ratios (365x195 and 365x350, i.e. 1.872 and 1.043), not at
- * shapes assigned to them, and a hash cannot land on a ratio that is not in its
- * bucket list. Falls back to the hashed bucket for cards with no preview, and
- * for previews not yet measured (image_w/image_h are backfilled in the
- * background, so an upgraded library converges rather than reflowing at once).
+ * Only clamped cards crop, and cropping is vertical only: every column is the
+ * same width and a card's width is always its column's, so the horizontal axis
+ * never has anything to discard.
  *
- * Accepts a bookmark or a bare id; the id form always uses the fallback.
+ * Uncropped cards get the default rather than a computed value — with shape ==
+ * natural aspect there is no overflow for a focal point to bias.
  */
-export function cardAspect(bookmarkOrId) {
-  const b = bookmarkOrId
-  if (b && typeof b === 'object') {
-    const w = Number(b.image_w)
-    const h = Number(b.image_h)
-    if (w > 0 && h > 0) {
-      return Math.min(CARD_ASPECT_MAX, Math.max(CARD_ASPECT_MIN, w / h))
-    }
-    return hashedAspect(b.id)
-  }
-  return hashedAspect(b)
-}
-
-// When the card shape deviates this far from the image's natural ratio,
-// the card letterboxes the full image over a blurred fill instead of
-// cover-cropping — text-heavy OG banners stay legible.
-export function shouldContain(bookmarkOrId, naturalAspect) {
-  if (!naturalAspect) return false
-  const shape = cardAspect(bookmarkOrId)
-  return shape < naturalAspect * 0.9 || shape > naturalAspect * 1.25
+export function focalPosition(b) {
+  if (!isCropped(b)) return undefined
+  // Number(null) is 0, and 0 is a legitimate focal value (top) — so a null has to
+  // be rejected BEFORE the numeric check or every unmeasured row silently
+  // top-anchors. That matters more than it looks: focal_y is null on every row
+  // until the backfill sweep has run, so getting this wrong top-anchors the
+  // whole library on first launch.
+  const raw = b?.focal_y
+  const stored = raw == null ? NaN : Number(raw)
+  const y = Number.isFinite(stored) && stored >= 0 && stored <= 1
+    ? stored
+    : b?.preview_source === 'screenshot'
+      ? 0
+      : 0.5
+  return `50% ${(y * 100).toFixed(2)}%`
 }
 
 export function faviconSrc(bookmark) {

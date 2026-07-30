@@ -7,11 +7,11 @@
  * Regenerate the database after editing:
  *   node tools/visual-diff/seed-fixture.mjs
  *
- * The seeder derives bookmark ids so that the app's own cardAspect() hash
- * (renderer/src/lib/format.js) lands on the `aspect` requested below — that is
- * how the fixture reproduces the mock's card proportions without touching app
- * code. Card preview images are cropped out of the Figma export itself, so the
- * gallery compares layout and chrome rather than unrelated artwork.
+ * The seeder writes each card's `aspect` as image_w/image_h, and the app takes
+ * its shape from that (cardShape in renderer/src/lib/format.js) — which is how
+ * the fixture reproduces the mock's card proportions without touching app code.
+ * Card preview images are cropped out of the Figma export itself, so the gallery
+ * compares layout and chrome rather than unrelated artwork.
  */
 
 export default {
@@ -27,11 +27,9 @@ export default {
   //   trash      = deleted                    → 0 (no badge shown in the mock)
   library: { everything: 235, unread: 189, favorite: 4, archived: 3, trash: 0 },
 
-  // The mock shows five collections then a "••• More" row. The app's
-  // COLLECTIONS_VISIBLE is 6, so "More" only appears at seven or more. We seed
-  // seven to reproduce the More row; the sixth visible row is a KNOWN
-  // divergence between the design (threshold 5) and the code (threshold 6),
-  // and the diff is supposed to show it. See README.
+  // The mock shows five collections then a "••• More" row. COLLECTIONS_VISIBLE
+  // is 5 (it was 6 until 59bfbe9 matched it to the design), so seeding seven
+  // renders exactly five rows plus More, as drawn.
   collections: [
     { name: 'Craft & detail', count: 4 },
     { name: 'Typography', count: 2 },
@@ -51,11 +49,11 @@ export default {
   // aspects.
   //
   // These are the DESIGN's two thumbnail ratios, taken from the frame itself:
-  // 365x195 = 1.872 and 365x350 = 1.043 (5181:230). They are deliberately NOT
-  // CARD_ASPECTS buckets. Cards now take their image's own shape, so the seeder
-  // writes image_w/image_h and the app lays out from those — which is the whole
-  // point: a fixture pinned to the buckets could only ever reproduce the
-  // buckets, and would have shown this change doing nothing.
+  // 365x195 = 1.872 and 365x350 = 1.043 (5181:230). The seeder writes them as
+  // image_w/image_h and the app lays out from those, so the app renders 1.872
+  // exactly rather than approximating it — which is what makes .card-media's
+  // height assertable at all. Both are well clear of the tall-end clamp
+  // (MAX_CARD_TALLNESS = 1.5, i.e. aspect >= 0.667), so no fixture card crops.
   cards: [
     { slug: 'rauno', title: 'Rauno Freiberg', url: 'https://rauno.me', domain: 'rauno.me', daysAgo: 2, aspect: 1.872 },
     { slug: 'polar', title: 'Polar', url: 'https://polar.sh', domain: 'polar.sh', daysAgo: 2, aspect: 1.043 },

@@ -643,8 +643,15 @@ select {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
-/* the media box owns the card shape (per-bookmark aspect bucket);
-   the image cover-fills whatever shape it was dealt */
+/* The media box takes the shape of its own image, so cover-fill is normally
+   an exact fit and crops nothing. It only has anything to discard on a card
+   the tall-end clamp bound, and there the inline object-position decides which
+   end goes (focalPosition in lib/format.js).
+
+   There is no letterboxed variant. It existed to rescue cards whose assigned
+   shape fought their image's — an impossible state now that the shape IS the
+   image's — and its blurred self-fill backdrop was also what made the harness's
+   captures non-reproducible. */
 .card-img {
   position: absolute;
   inset: 0;
@@ -652,20 +659,6 @@ select {
   height: 100%;
   object-fit: cover;
   object-position: center;
-}
-/* letterboxed fit for images whose shape fights the card's — full image
-   over a blurred self-fill, so OG text never gets cropped away */
-.card-img.is-contain {
-  object-fit: contain;
-  z-index: 1;
-}
-.card-img-backdrop {
-  position: absolute;
-  inset: -8%;
-  width: 116%;
-  height: 116%;
-  object-fit: cover;
-  filter: blur(26px) saturate(1.15) brightness(0.55);
 }
 .card-ph {
   position: absolute;

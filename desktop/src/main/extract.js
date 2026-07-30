@@ -61,20 +61,32 @@ export async function extractMeta(url) {
       }
     }
 
+    // Which branch produced the preview is recorded, not inferred later. It
+    // decides how a clamped card crops, and it is unrecoverable after the fact:
+    // a cached og:image and a cached screenshot are both just a hash on disk.
     let image_path = null
+    let preview_source = null
     if (image_url) {
       image_path = await cacheImage(image_url)
+      if (image_path) preview_source = 'og'
     } else {
       image_path = await screenshotFallback(url)
+      if (image_path) preview_source = 'screenshot'
     }
 
     const content = extractReadableText(html)
 
-    return { title: cleanText(title), summary: cleanText(summary), image_url, image_path, domain, content }
+    return {
+      title: cleanText(title), summary: cleanText(summary),
+      image_url, image_path, preview_source, domain, content
+    }
   } catch {
     const domain = safeDomain(url)
     const image_path = await screenshotFallback(url)
-    return { title: domain, summary: null, image_url: null, image_path, domain }
+    return {
+      title: domain, summary: null, image_url: null, image_path,
+      preview_source: image_path ? 'screenshot' : null, domain
+    }
   } finally {
     clearTimeout(timeout)
   }

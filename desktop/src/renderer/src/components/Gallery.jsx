@@ -1,6 +1,6 @@
 import { useState, useRef, useMemo, useLayoutEffect, useEffect } from 'react'
 import { HeartIcon, CheckIcon, ExtLinkIcon, NoteIcon } from './Icons.jsx'
-import { timeAgo, hashColor, imageSrc, domainInitial, cardAspect, shouldContain } from '../lib/format.js'
+import { timeAgo, hashColor, imageSrc, domainInitial, cardShape, focalPosition } from '../lib/format.js'
 import Favicon from './Favicon.jsx'
 
 const GAP_X = 20
@@ -44,7 +44,7 @@ export default function Gallery({
     const colW = (width - GAP_X * (cols - 1)) / cols
     const heights = new Array(cols).fill(0)
     const placements = items.map((b, idx) => {
-      const h = colW / cardAspect(b) + META_H
+      const h = colW / cardShape(b) + META_H
       const col = heights.indexOf(Math.min(...heights))
       const x = col * (colW + GAP_X)
       const y = heights[col]
@@ -100,10 +100,8 @@ function Card({
   onSelect
 }) {
   const [imgFailed, setImgFailed] = useState(false)
-  const [natural, setNatural] = useState(0)
   const [heartAnim, setHeartAnim] = useState('')
   const src = imageSrc(b)
-  const contain = shouldContain(b, natural)
 
   // Backfill the local cache for remote-only previews so the gallery works offline
   useEffect(() => {
@@ -131,29 +129,23 @@ function Card({
       aria-label={b.title || b.url}
       style={{ contentVisibility: 'auto', containIntrinsicSize: '320px' }}
     >
-      <div className="card-media" style={{ aspectRatio: cardAspect(b) }}>
+      <div className="card-media" style={{ aspectRatio: cardShape(b) }}>
         {src && !imgFailed ? (
-          <>
-            {contain && (
-              <img className="card-img-backdrop" src={src} alt="" aria-hidden="true" draggable={false} />
-            )}
-            <img
-              className={`card-img${contain ? ' is-contain' : ''}`}
-              src={src}
-              alt=""
-              loading="lazy"
-              draggable={false}
-              onLoad={(e) => {
-                const { naturalWidth: w, naturalHeight: h } = e.currentTarget
-                if (w && h) setNatural(w / h)
-              }}
-              onError={() => {
-                setImgFailed(true)
-                // If we only had a remote URL, ask main to cache it for next time
-                if (!b.image_path && b.image_url) window.staaash['images:ensure'](b.id)
-              }}
-            />
-          </>
+          <img
+            className="card-img"
+            src={src}
+            alt=""
+            loading="lazy"
+            draggable={false}
+            // Only set for a clamped card, and only ever on the vertical axis —
+            // the columns are uniform width, so nothing overflows horizontally.
+            style={{ objectPosition: focalPosition(b) }}
+            onError={() => {
+              setImgFailed(true)
+              // If we only had a remote URL, ask main to cache it for next time
+              if (!b.image_path && b.image_url) window.staaash['images:ensure'](b.id)
+            }}
+          />
         ) : (
           <div className="card-ph" aria-hidden="true">
             <span>{domainInitial(b)}</span>

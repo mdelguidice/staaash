@@ -8,7 +8,7 @@
   "_rule": "Assert only what a source states outright. Where the two sources disagree, skip the property and record why in _skipped rather than picking one.",
   "_assertionRule": "Assert only quantities the DESIGN determines — proportions, spacing, colour, type, radii, behaviour thresholds. Never assert quantities CONTENT determines — item counts, list totals, text-derived sizes, or any position downstream of them. Three corollaries, each paid for by a withdrawn assertion: (1) LISTS — assert the last item only where the list's length is fixed by the design. The five Library categories are hardcoded in Sidebar.jsx and match Figma, so the Trash row is assertable; .sb-more was not, because it compared Figma's five mock collections against the fixture's seven. A first-item assertion is only an origin check and is blind to accumulation — so where the last item is not assertable, the accumulation is not either, and that is a limit to state rather than to work around. (2) ANCHORED EDGES — for a text-sized box assert the edge the design anchors, not the one its glyphs move, and verify the edge really is anchored: .sb-count's trailing edge is fixed by its row, .seg's is not because it sits left of another text-sized box. (3) ACCUMULATION — an accumulated position is assertable only if every term in it is design-determined. Masonry card 8's y accumulates media heights chosen by a hash of the bookmark id, so it measured the fixture, not the app. Full statement: tools/visual-diff/README.md, 'What may be asserted'.",
   "_notAssertable": {
-    "masonry accumulation": "Card 8's y accumulates per-card media heights, and a card's aspect bucket comes from a hash of its bookmark id. Withdrawn 2026-07-28; the finding it produced is recorded on .card-media as _cardAspectDrift. The design-determined alternative — the third column's x, which accumulates two column widths and two gutters — is also not clean: Figma's own frame pads 20px on the left and 21px on the right, so its columns imply 365.0 where the app computes 365.33, and the 0.67px difference is the design's rounding rather than the app's.",
+    "masonry accumulation": "Card 8's y accumulates per-card media heights. Until 2026-07-29 a card's shape came from a hash of its bookmark id, so the assertion measured the fixture and was withdrawn. That reason is now gone — shapes come from stored image dimensions and the fixture seeds the design's own ratios — and card 8 measures 715.50 against Figma's 715. It is STILL not asserted, for two narrower reasons. (1) 0.50px sits exactly on the half-pixel tolerance, so it would pass by rounding rather than by being right; the residual is the 365.33 column width against the design's implied 365.0, which is Figma's own rounding (its frame pads 20px left and 21px right). (2) Card 4 measures 325.18/350.31 against 325/350 and is comfortably inside tolerance, so it is the accumulation assertion worth adding — but its Figma rect has not been re-read from get_metadata in-session, and the numbers in this file are only ever ones a source stated. Add it after a get_metadata call on 5181:230's fourth child.",
     "tags": "Figma's Tags Section (5181:148) and tag Section items (5270:138) are hidden, and the fixture renders no tags with count > 0. No list on either side.",
     "text-derived widths": ".seg's width and right edge, .ask-chip's width, .sb-count's width and x. All move with glyph metrics. Where the design anchors an edge, that edge is asserted instead.",
     "collection COUNT vs collection ROWS": "The number of rows shown before ••• More is design-determined (COLLECTIONS_VISIBLE, five in Figma) and IS asserted via .sb-more. How many collections the library actually holds is content and is not asserted anywhere."
@@ -163,7 +163,6 @@
       "_name": "Thumbnail (FIRST card)",
       "_pairedWith": ".masonry-item:nth-child(8) .card-media — a first-item assertion only proves the grid ORIGIN is right. The last-card assertion is what proves the run of cards between them accumulates correctly.",
       "_skipped": {
-        "height": "get_metadata gives 195, implying aspect 1.872. That is not one of the app's CARD_ASPECTS buckets (format.js), so asserting it would test the fixture's bucket choice rather than the app. The x/y assertion still catches where the grid starts.",
         "background-color": "The design fills the thumbnail with an image, so no background colour is stated; the app's --surface shows only where an image is missing."
       },
       "border-radius": {
@@ -178,7 +177,9 @@
         "x": 284,
         "y": 90,
         "width": 365,
-        "source": "get_metadata"
+        "source": "get_metadata",
+        "height": 195,
+        "_requires": "Assertable only because the fixture seeds each card at the DESIGN's own thumbnail ratio (fixtures/figma-mock/fixture.mjs, cards[].aspect = 1.872 / 1.043) and the app takes each card's shape from its stored image_w/image_h rather than assigning one (64381e2). A card's height is therefore CONTENT-determined in general — reseed the fixture from other artwork and this assertion measures the fixture, not the app. Same shape of exception as .sb-more's, and the same obligation: if fixture.mjs stops seeding the design's ratios, withdraw this."
       },
       "_note": "Figma states a 1px stroke. The app renders it as outline with outline-offset:-1px rather than a border — visually equivalent and arguably better, since a border would inset the image. Asserted on the property the app actually uses.",
       "outline-width": {
@@ -189,7 +190,7 @@
         "value": "rgba(250, 255, 230, 0.04)",
         "source": "get_design_context"
       },
-      "_cardAspectDrift": "Measured 2026-07-28 and left unasserted: the app's grid runs 25.58px longer than the design by the third card in column 1 (Figma 715, app 740.58). Card 1's media is 205.23 against Figma's 195 and card 4's is 365.33 against 350, because the design's thumbnail proportions are 365/195 = 1.872 and 365/350 = 1.043 and CARD_ASPECTS (format.js) has neither — nearest buckets are 1.78 and 1.0. Recorded rather than asserted because which bucket a card gets comes from a hash of its bookmark id, so the assertion measured the fixture. See _notAssertable."
+      "_cardAspectDrift": "RESOLVED. Was: the grid ran 25.58px long by the third card in column 1 (Figma 715, app 740.58), card 1's media 205.23 against 195 and card 4's 365.33 against 350, because CARD_ASPECTS held neither of the design's ratios and a hash of the bookmark id picked among the buckets. Fixed by 64381e2 (2026-07-29), which made cards take their image's proportions — so this entry and the height skip below it were stale by one commit until 2026-07-29. Re-measured on the current build: card 1 365.33x195.17 against 365x195, card 4 350.31 at y 325.18 against 350 at 325, card 8 y 715.50 against 715. Residual 0.50px, from the 365.33 column width against the design's implied 365.0 — Figma's own rounding. A later commit deleted CARD_ASPECTS outright and replaced the [0.7, 2.1] range with a tall-end-only clamp (MAX_CARD_TALLNESS = 1.5); that changed no card in this fixture, since both seeded ratios clear the clamp."
     },
     ".sb": {
       "_node": "5181:39",

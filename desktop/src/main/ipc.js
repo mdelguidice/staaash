@@ -6,8 +6,62 @@ import { readFile, writeFile } from 'node:fs/promises'
 import * as db from './db.js'
 import { extractMeta, cacheImage, checkLink, cleanText, fetchFavicon } from './extract.js'
 import { imageSize } from './imageSize.js'
+import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { askStaaash, suggestCollection } from './ai.js'
+
+/**
+ * Everything a card needs to know about its preview before the image loads:
+ * intrinsic size, where it came from, and where to hold it if it has to crop.
+ *
+ * focal_y is stored rather than derived at render time so a smarter focal
+ * detector can overwrite a single row later without the renderer changing. Until
+ * one exists the value is a function of preview_source:
+ *
+ *   screenshot -> 0    a page screenshot's subject is its header and hero; the
+ *                      bottom of a tall screenshot is footer.
+ *   og:image   -> 0.5  an og:image is composed to be seen whole, so its subject
+ *                      is centred and cropping from either edge is symmetric.
+ *   unknown    -> 0.5  centre is the safer wrong answer: it loses half as much
+ *                      from the top as top-anchoring loses from the bottom.
+ */
+export async function previewFacts(image_path, preview_source) {
+  if (!image_path) return { preview_source: preview_source ?? null }
+  const size = await imageSize(join(db.imagesDir(), image_path))
+  return {
+    preview_source: preview_source ?? null,
+    focal_y: preview_source === 'screenshot' ? 0 : 0.5,
+    ...(size ? { image_w: size.w, image_h: size.h } : {})
+  }
+}
+
+/**
+ * Recover a pre-existing row's preview_source from its cache filename.
+ *
+ * extract.js names cache files by hash, and the two branches hash different
+ * things — so the filename itself is the evidence, and it survives even when
+ * image_url does not:
+ *
+ *   og:image   -> sha256(image_url)
+ *   screenshot -> sha256(url + ':screenshot')
+ *
+ * Returns null where neither matches, which is not a failure to handle better:
+ * migrate.js nulls an image_url that pointed at the old server's own cache
+ * (/api/cached/<hash>), and once that is gone the file's origin is genuinely
+ * unrecorded. Measured on a real 293-row library: 236 recover as 'og', 0 as
+ * 'screenshot', 7 unrecoverable. Guessing 'screenshot' from a null image_url
+ * would have mislabelled all 7 — they are Instagram og:images, and they are also
+ * every tall card in the library, so the guess would top-anchor exactly the
+ * portrait photos that should stay centred.
+ */
+export function recoverPreviewSource(b) {
+  if (!b.image_path) return null
+  const stem = b.image_path.replace(/\.[^.]+$/, '')
+  const sha16 = (s) => createHash('sha256').update(s).digest('hex').slice(0, 16)
+  if (b.image_url && stem === sha16(b.image_url)) return 'og'
+  if (b.url && stem === sha16(b.url + ':screenshot')) return 'screenshot'
+  return null
+}
 
 // Smart URL input: auto-prepend https://
 export function smartUrl(input) {
@@ -52,7 +106,10 @@ export async function addBookmark({ url, title, note, source, tags }, notify) {
         image_path: meta.image_path,
         favicon_path,
         domain: meta.domain ?? domain,
-        content: meta.content ?? null
+        content: meta.content ?? null,
+        // Measured here, at save time, so the card has its shape before it first
+        // renders. The sweep exists for rows that predate this, not for this one.
+        ...(await previewFacts(meta.image_path, meta.preview_source))
       })
       notify?.('bookmarks:updated', updated)
       // Fire-and-forget AI collection suggestion (no-ops without an API key)
@@ -251,21 +308,48 @@ export function registerIpc(getWindow) {
   // can place anything — so sizes live on the record. Measuring them here, in
   // one pass over the cached files, is what stops an upgraded library from
   // reflowing card by card as the user scrolls into it. Reads headers only.
+  // Backfill for rows that predate the save-time measurement. Idempotent: it
+  // selects only rows still missing something, writes only what it derived, and
+  // is safe to run on every launch — a converged library selects nothing.
   handle('images:size-sweep', async () => {
     const targets = db
       .listBookmarks()
-      .filter((b) => !b.deleted_at && b.image_path && !(b.image_w > 0 && b.image_h > 0))
+      .filter(
+        (b) =>
+          !b.deleted_at &&
+          b.image_path &&
+          (!(b.image_w > 0 && b.image_h > 0) || b.preview_source == null)
+      )
     let measured = 0
+    let sourced = 0
     for (const b of targets) {
-      const size = await imageSize(join(db.imagesDir(), b.image_path))
-      if (!size) continue
-      db.updateBookmark(b.id, { image_w: size.w, image_h: size.h })
-      measured++
+      const patch = {}
+      if (!(b.image_w > 0 && b.image_h > 0)) {
+        const size = await imageSize(join(db.imagesDir(), b.image_path))
+        if (size) {
+          patch.image_w = size.w
+          patch.image_h = size.h
+          measured++
+        }
+      }
+      if (b.preview_source == null) {
+        // 'unknown' rather than leaving it null: null means "not examined yet",
+        // so a row whose origin is genuinely unrecoverable would be re-examined
+        // on every launch forever. Stamping it makes the sweep converge, and the
+        // information really is gone — migrate.js destroyed the image_url these
+        // rows would have been identified by. Treated as centre-focal, same as
+        // 'og', which is what they in fact are.
+        const source = recoverPreviewSource(b) ?? 'unknown'
+        patch.preview_source = source
+        patch.focal_y = source === 'screenshot' ? 0 : 0.5
+        sourced++
+      }
+      if (Object.keys(patch).length) db.updateBookmark(b.id, patch)
     }
     // One notification for the whole pass, not one per card — the layout should
     // settle once rather than shuffle as each measurement lands.
-    if (measured) notify('bookmarks:changed')
-    return { ok: true, scanned: targets.length, measured }
+    if (measured || sourced) notify('bookmarks:changed')
+    return { ok: true, scanned: targets.length, measured, sourced }
   })
 
   // ── Dead-link background sweep (links unchecked in 7+ days) ──
@@ -342,7 +426,11 @@ export function registerIpc(getWindow) {
     if (!b || b.image_path || !b.image_url) return b
     const image_path = await cacheImage(b.image_url)
     if (!image_path) return b
-    const updated = db.updateBookmark(id, { image_path })
+    // Reached only via b.image_url, so this file is an og:image by construction.
+    const updated = db.updateBookmark(id, {
+      image_path,
+      ...(await previewFacts(image_path, 'og'))
+    })
     notify('bookmarks:updated', updated)
     return updated
   })

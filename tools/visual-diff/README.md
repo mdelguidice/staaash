@@ -158,6 +158,16 @@ noise at n=5, not a regression). It scores **0.00% (120 px)** after threshold: a
 sub-threshold alpha difference across the whole scrim, never able to move a
 score. Recorded, not chased — see "Accepted, not fixing".
 
+**The workaround is gone, and the cause with it.** `STABILISE_CSS` no longer
+neutralises the blur, because `.card-img-backdrop` no longer exists. It backed a
+letterboxed fit for cards whose assigned shape fought their image's, and cards
+now take their image's own shape, so that state is unreachable — see "Card shape"
+below. The blur is therefore absent from the app rather than suppressed at
+capture time, and the delta no longer pays for a backdrop the reference paints
+and the capture does not. Measured after removal: **four consecutive clean
+calibrations across all three screens** (12 screen-pairs), including the
+`settings` scrim.
+
 **What the flake did and did not affect, while it lasted** — measured over six
 single-capture runs landing in both states. This is the evidence behind
 suppressing only pixel-derived output on disagreement:
@@ -424,6 +434,35 @@ box at 14px is 17px. Figma could not catch it: Figma's own text node *is* 14px
 tall, so comparing the app to the design would have demanded the bug. The audit
 sweeps every element on every screen rather than the 11 the spec names — the bug
 was inside those 11 and passed anyway.
+
+### Card shape, and why `.card-media`'s height became assertable
+
+A card's height is `columnWidth / aspect`, and the aspect is its image's own —
+read from `image_w`/`image_h` on the record, never from the loaded `<img>`, because
+the masonry places every card before any of them paint. The only bound is at the
+tall end: `MAX_CARD_TALLNESS = 1.5`, so no card exceeds 1.5× its column width.
+
+That clamp was picked from the real library, not chosen for roundness. Measured
+over 243 previews: the aspect histogram is empty between 0.564 and 0.769, so
+**every candidate from 1.3× to 1.75× clamps the same five images** and the choice
+only sets how much of them is cropped — 27% at 1.3×, 15% at 1.5×, 1% at 1.75×.
+1.5× is where the old letterbox mechanism stops being reachable rather than
+merely idle: it fired when a card's shape differed from its image's by more than
+−10%/+25%, and a 1.5× clamp on a 0.564 image lands inside that tolerance.
+
+`.card-media`'s `height` was skipped for months on the grounds that Figma's 195
+implies 1.872 and `CARD_ASPECTS` held no such bucket. That reason died with
+`64381e2` and the skip was stale by one commit. It is now asserted — but only
+with a `_requires`, because a card's height is **content**-determined in general.
+It is assertable here solely because the fixture seeds the design's own thumbnail
+ratios, so within this fixture the content *is* the design. Same exception shape
+as `.sb-more`'s, and the same obligation: reseed from other artwork and the
+assertion has to be withdrawn.
+
+Card 8's y is *still* not asserted, for a narrower reason than before — it
+measures 715.50 against Figma's 715, which passes only by rounding at the
+half-pixel tolerance. Card 4 (325.18/350.31 against 325/350) is the accumulation
+assertion worth having, and it waits on a fresh `get_metadata` for its rect.
 
 ### Strokes and layout
 
