@@ -3,7 +3,11 @@
 **Date:** 2026-07-29
 **Branch:** `main`
 **Commit:** `ef4f948` — *Give cards their image's real proportions, clamped only at the tall end*
-**Not yet repackaged** — see "Next steps".
+**Repackaged:** `desktop/dist/staaash-1.0.0-arm64.dmg`, 2026-07-30 09:01,
+120,436,103 bytes. Verified by extracting `app.asar`: 13/13 checks — the schema
+columns, AVIF parsing, provenance recovery and the convergence sentinel in the
+main bundle; `CARD_ASPECTS` absent, the 1.5× clamp present, and `is-contain` /
+`card-img-backdrop` / `blur(26px)` all absent from the renderer CSS.
 
 Four phases as specified; phase 1 reported first and the clamp chosen from its
 numbers. Mike's decision was on the mechanism rather than the number: *"I dont
@@ -213,9 +217,10 @@ exposed it.
 
 ## Suggested next steps
 
-1. **Repackage.** Not done — the `.dmg` still carries the previous build. First
-   launch after it will run the additive migration plus a one-pass backfill of
-   242 rows (5 image reads, the rest filename hashing), then converge to 1.
+1. **Launch it.** Done and verified as packaged. First launch runs the additive
+   migration plus a one-pass backfill of 242 rows (5 image reads, the rest
+   filename hashing), then converges to 1 target per launch. The app is unsigned
+   (`identity: null`), so it needs the Gatekeeper override.
 2. **49 cards have no preview at all** (293 − 244) and now all render at the same
    1.905 shape, where the hash used to give them variety. They already look
    uniform — each shows a placeholder letter tile — so this is arguably more
