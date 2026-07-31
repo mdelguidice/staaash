@@ -47,6 +47,7 @@ app.whenReady().then(async () => {
   const result = { ok: false }
   try {
     const db = await import(pathToFileURL(join(DESKTOP, 'src/main/db.js')).href)
+    const { placeholderFor } = await import(pathToFileURL(join(DESKTOP, 'src/main/placeholder.js')).href)
 
     // ── patch mode: point seeded rows at their cropped preview images ──────
     if (PATCH_PATH) {
@@ -131,6 +132,7 @@ app.whenReady().then(async () => {
     const span = spec.filler.oldestDaysAgo - spec.filler.startDaysAgo
     for (let i = 0; i < fillerActive; i++) {
       const daysAgo = spec.filler.startDaysAgo + (span * i) / Math.max(1, fillerActive - 1)
+      const ph = placeholderFor(`fx-filler-${i}`, null)
       db.insertBookmark({
         id: `fx-filler-${i}`,
         url: `https://example.org/filler/${i}`,
@@ -140,7 +142,17 @@ app.whenReady().then(async () => {
         read_at: i < readTarget ? iso(daysAgo - 1) : null,
         favorited: i < favorite ? 1 : 0,
         collection_id: assign[i] ?? null,
-        source: 'fixture'
+        source: 'fixture',
+        // Filler cards have no preview, so the app would generate a gradient
+        // placeholder for each on first launch — and the backfill sweep fires
+        // 1200ms after mount, i.e. inside the harness's settle window. Seeding
+        // them here is what stops run 1 from differing from run 2. Same reason
+        // image_w and preview_source are seeded.
+        ph_comp: ph.comp,
+        ph_hue_a: ph.hueA,
+        ph_hue_b: ph.hueB,
+        ph_hue_c: ph.hueC,
+        ph_aspect: ph.aspect
       })
     }
 
@@ -152,7 +164,9 @@ app.whenReady().then(async () => {
         domain: 'example.org',
         created_at: iso(spec.filler.oldestDaysAgo + i + 1),
         archived_at: iso(1),
-        source: 'fixture'
+        source: 'fixture',
+        ...(() => { const p = placeholderFor(`fx-archived-${i}`, null)
+          return { ph_comp: p.comp, ph_hue_a: p.hueA, ph_hue_b: p.hueB, ph_hue_c: p.hueC, ph_aspect: p.aspect } })()
       })
     }
 

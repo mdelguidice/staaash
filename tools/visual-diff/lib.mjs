@@ -147,6 +147,17 @@ export const STABILISE_CSS = `
      nothing, so :hover can never apply — and the Figma reference shows no
      hovered card either. Injected after the route steps, so clicks still work. */
   * { pointer-events: none !important; }
+  /* NO grain rule here, and that is a measured decision rather than an
+     oversight. Gradient placeholders carry an feTurbulence data URI as a CSS
+     background, which is the same family as the blur that used to make captures
+     bistable — so it was tested twice before being trusted. Over card images,
+     two launches are byte-identical. Scrolling placeholders into view and
+     capturing twice DOES differ, but that is not the grain: forcing
+     content-visibility: visible makes the same scrolled capture byte-identical
+     WITH grain still on. The variable is content-visibility: auto's render
+     timing after a programmatic scroll, which the harness's own screens never
+     perform. Suppressing the grain here would have made the harness measure
+     something the app does not render, for a cause it does not have. */
   /* REMOVED 2026-07-29, deliberately not replaced. This used to neutralise
      .card-img-backdrop's filter: blur(26px), whose non-deterministic tiled
      rasterisation put the everything screen in one of two render states on ~21%

@@ -674,6 +674,61 @@ select {
   color: var(--muted);
 }
 
+/* ── Gradient placeholders ──────────────────────────────────────────────────
+   Cards with no preview image. The blob layers arrive as an inline
+   background-image from lib/placeholder.js (CSS radial-gradients, so no blur
+   filter is involved); everything here is the part that does not vary per card.
+
+   .is-gradient overrides the flat fallback above, which still serves rows whose
+   placeholder has not been generated yet — a library mid-backfill shows the old
+   surface rather than a broken card. */
+.card-ph.is-gradient {
+  background-color: transparent; /* the inline style supplies the tinted base */
+}
+/* The initial is redundant once there is a composition, and it fought the
+   blobs for the centre of the card. Kept in the DOM for the non-gradient
+   fallback, hidden here. */
+.card-ph.is-gradient span {
+  display: none;
+}
+/* Grain. An SVG-noise data URI is the only way to get real film grain from CSS,
+   but note what is NOT here: no feGaussianBlur, and no filter on the element.
+   feTurbulence at a fixed seed was verified byte-identical across two separate
+   app launches before this shipped — the blur that used to sit on
+   .card-img-backdrop was not, and it cost twenty calibration runs to find. */
+.card-ph.is-gradient::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' seed='7' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  opacity: 0.28;
+  mix-blend-mode: overlay;
+}
+
+/* States. A thumbnail card lifts its veil on hover and shows a focus ring; a
+   placeholder has no thumbnail to reveal, so it answers with light instead —
+   the composition brightens slightly and the base warms. Same durations and
+   easing as every other card affordance, so the two kinds feel like one grid. */
+.card-ph.is-gradient {
+  transition: filter var(--dur-micro) ease, transform var(--dur-micro) ease;
+}
+.card:hover .card-ph.is-gradient {
+  filter: brightness(1.18) saturate(1.12);
+}
+/* Focus is a state of the CARD, not the pointer, so it reads stronger than
+   hover and does not depend on the veil being up. .card-media already draws the
+   focus ring itself (outline + offset), so this only lifts the fill to match. */
+.card.is-focused .card-ph.is-gradient {
+  filter: brightness(1.24) saturate(1.15);
+}
+@media (prefers-reduced-motion: reduce) {
+  .card-ph.is-gradient {
+    transition: none;
+  }
+}
+
 /* hover overlay — title lands first, then pills */
 .card-veil {
   position: absolute;

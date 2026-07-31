@@ -1,6 +1,7 @@
 import { useState, useRef, useMemo, useLayoutEffect, useEffect } from 'react'
 import { HeartIcon, CheckIcon, ExtLinkIcon, NoteIcon } from './Icons.jsx'
 import { timeAgo, hashColor, imageSrc, domainInitial, cardShape, focalPosition } from '../lib/format.js'
+import { hasPlaceholder, placeholderStyle, resolveAdjacentHues } from '../lib/placeholder.js'
 import Favicon from './Favicon.jsx'
 
 const GAP_X = 20
@@ -38,8 +39,8 @@ export default function Gallery({
     return () => ro.disconnect()
   }, [])
 
-  const { placements, totalH, colW } = useMemo(() => {
-    if (!width) return { placements: [], totalH: 0, colW: 0 }
+  const { placements, totalH, colW, phShifts } = useMemo(() => {
+    if (!width) return { placements: [], totalH: 0, colW: 0, phShifts: new Map() }
     const cols = Math.max(1, Math.min(MAX_COLS, Math.floor((width + GAP_X) / (MIN_COL_W + GAP_X))))
     const colW = (width - GAP_X * (cols - 1)) / cols
     const heights = new Array(cols).fill(0)
@@ -49,9 +50,13 @@ export default function Gallery({
       const x = col * (colW + GAP_X)
       const y = heights[col]
       heights[col] = y + h + GAP_Y
-      return { b, idx, x, y }
+      return { b, idx, x, y, h }
     })
-    return { placements, totalH: Math.max(...heights, 0), colW }
+    // Two adjacent placeholders in the same colour family read as one smear, so
+    // the later of a colliding pair is nudged. Runs on the masonry's own
+    // placements, after layout, because adjacency is a fact about position.
+    const phShifts = resolveAdjacentHues(placements, colW)
+    return { placements, totalH: Math.max(...heights, 0), colW, phShifts }
   }, [items, width])
 
   // keep the focused card in view for J/K navigation
@@ -73,6 +78,7 @@ export default function Gallery({
         >
           <Card
             bookmark={b}
+            phShift={phShifts.get(b.id)}
             collections={collections}
             tags={tags}
             focused={idx === focusedIndex}
@@ -90,6 +96,7 @@ export default function Gallery({
 
 function Card({
   bookmark: b,
+  phShift,
   collections,
   tags,
   focused,
@@ -147,7 +154,11 @@ function Card({
             }}
           />
         ) : (
-          <div className="card-ph" aria-hidden="true">
+          <div
+            className={`card-ph${hasPlaceholder(b) ? ' is-gradient' : ''}`}
+            aria-hidden="true"
+            style={hasPlaceholder(b) ? placeholderStyle(b, phShift) : undefined}
+          >
             <span>{domainInitial(b)}</span>
           </div>
         )}

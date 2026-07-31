@@ -139,6 +139,22 @@ function migrateSchema(db) {
   if (!cols.includes('focal_y')) {
     db.exec('ALTER TABLE bookmarks ADD COLUMN focal_y REAL')
   }
+  // Gradient placeholder for a bookmark with no preview image. Every value is a
+  // pure function of the domain (see main/placeholder.js) so it could in
+  // principle be recomputed on demand — it is stored so that changing the
+  // generator later cannot reshuffle a library that already exists, and so the
+  // renderer needs no hashing on the layout path.
+  //
+  // ph_comp   which of the ten compositions
+  // ph_hue_a/b/c  the three hue stops, degrees. Saturation and lightness are
+  //           NOT stored: they come from the house palette in CSS, so the whole
+  //           library's register can be retuned without a migration.
+  // ph_aspect the card's shape, from the same set the reframing work used
+  if (!cols.includes('ph_comp')) db.exec('ALTER TABLE bookmarks ADD COLUMN ph_comp INTEGER')
+  if (!cols.includes('ph_hue_a')) db.exec('ALTER TABLE bookmarks ADD COLUMN ph_hue_a REAL')
+  if (!cols.includes('ph_hue_b')) db.exec('ALTER TABLE bookmarks ADD COLUMN ph_hue_b REAL')
+  if (!cols.includes('ph_hue_c')) db.exec('ALTER TABLE bookmarks ADD COLUMN ph_hue_c REAL')
+  if (!cols.includes('ph_aspect')) db.exec('ALTER TABLE bookmarks ADD COLUMN ph_aspect REAL')
 }
 
 // ── URL normalization (dedup) ──
@@ -225,6 +241,11 @@ export function insertBookmark(fields) {
     image_h: fields.image_h ?? null,
     preview_source: fields.preview_source ?? null,
     focal_y: fields.focal_y ?? null,
+    ph_comp: fields.ph_comp ?? null,
+    ph_hue_a: fields.ph_hue_a ?? null,
+    ph_hue_b: fields.ph_hue_b ?? null,
+    ph_hue_c: fields.ph_hue_c ?? null,
+    ph_aspect: fields.ph_aspect ?? null,
     favicon_path: fields.favicon_path ?? null,
     created_at: fields.created_at ?? new Date().toISOString(),
     read_at: fields.read_at ?? null,
@@ -241,10 +262,12 @@ export function insertBookmark(fields) {
   }
   db.prepare(`INSERT INTO bookmarks (id, url, normalized_url, title, domain, summary, image_url, image_path,
       image_w, image_h, preview_source, focal_y,
+      ph_comp, ph_hue_a, ph_hue_b, ph_hue_c, ph_aspect,
       favicon_path, created_at, read_at, archived_at, deleted_at, favorited, source, hn_url, note, content,
       last_checked, is_dead, collection_id)
     VALUES (@id, @url, @normalized_url, @title, @domain, @summary, @image_url, @image_path,
       @image_w, @image_h, @preview_source, @focal_y,
+      @ph_comp, @ph_hue_a, @ph_hue_b, @ph_hue_c, @ph_aspect,
       @favicon_path, @created_at, @read_at, @archived_at, @deleted_at, @favorited, @source, @hn_url, @note, @content,
       @last_checked, @is_dead, @collection_id)`).run(b)
   if (Array.isArray(fields.tags) && fields.tags.length) setBookmarkTags(id, fields.tags)
@@ -254,7 +277,8 @@ export function insertBookmark(fields) {
 const UPDATABLE = new Set([
   'url', 'title', 'domain', 'summary', 'image_url', 'image_path', 'favicon_path', 'read_at', 'archived_at',
   'deleted_at', 'favorited', 'source', 'hn_url', 'note', 'content', 'last_checked', 'is_dead',
-  'collection_id', 'image_w', 'image_h', 'preview_source', 'focal_y'
+  'collection_id', 'image_w', 'image_h', 'preview_source', 'focal_y',
+  'ph_comp', 'ph_hue_a', 'ph_hue_b', 'ph_hue_c', 'ph_aspect'
 ])
 
 export function updateBookmark(id, patch) {

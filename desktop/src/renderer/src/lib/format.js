@@ -74,8 +74,13 @@ const UNMEASURED_ASPECT = 1.905
 export function cardShape(b) {
   const w = Number(b?.image_w)
   const h = Number(b?.image_h)
-  if (!(w > 0 && h > 0)) return UNMEASURED_ASPECT
-  return Math.max(MIN_CARD_ASPECT, w / h)
+  if (w > 0 && h > 0) return Math.max(MIN_CARD_ASPECT, w / h)
+  // No preview at all: the gradient placeholder carries its own shape, assigned
+  // once at save time from the domain (main/placeholder.js). Not clamped — it is
+  // chosen from a fixed set that is already inside the clamp.
+  const ph = Number(b?.ph_aspect)
+  if (ph > 0) return ph
+  return UNMEASURED_ASPECT
 }
 
 /** True when the clamp bound, so the card shows less than the whole image. */

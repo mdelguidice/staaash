@@ -6,6 +6,8 @@ import { readFile, writeFile } from 'node:fs/promises'
 import * as db from './db.js'
 import { extractMeta, cacheImage, checkLink, cleanText, fetchFavicon } from './extract.js'
 import { imageSize } from './imageSize.js'
+import { faviconHue } from './faviconHue.js'
+import { placeholderFor } from './placeholder.js'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import { askStaaash, suggestCollection } from './ai.js'
@@ -32,6 +34,26 @@ export async function previewFacts(image_path, preview_source) {
     preview_source: preview_source ?? null,
     focal_y: preview_source === 'screenshot' ? 0 : 0.5,
     ...(size ? { image_w: size.w, image_h: size.h } : {})
+  }
+}
+
+/**
+ * Gradient-placeholder parameters for a bookmark that has no preview image.
+ *
+ * Returns {} when the bookmark HAS a preview, so calling it unconditionally is
+ * safe — a card that later gains an image simply stops reading these columns.
+ * The favicon supplies hue only; everything else is a function of the domain.
+ */
+export async function placeholderFacts(b) {
+  if (b.image_path) return {}
+  const favHue = b.favicon_path ? await faviconHue(join(db.imagesDir(), b.favicon_path)) : null
+  const p = placeholderFor(b.domain || b.url || b.id, favHue)
+  return {
+    ph_comp: p.comp,
+    ph_hue_a: p.hueA,
+    ph_hue_b: p.hueB,
+    ph_hue_c: p.hueC,
+    ph_aspect: p.aspect
   }
 }
 
@@ -109,7 +131,12 @@ export async function addBookmark({ url, title, note, source, tags }, notify) {
         content: meta.content ?? null,
         // Measured here, at save time, so the card has its shape before it first
         // renders. The sweep exists for rows that predate this, not for this one.
-        ...(await previewFacts(meta.image_path, meta.preview_source))
+        ...(await previewFacts(meta.image_path, meta.preview_source)),
+        // A bookmark that came back with no preview gets its placeholder now,
+        // for the same reason: the masonry needs a shape before anything paints.
+        ...(await placeholderFacts({
+          image_path: meta.image_path, favicon_path, domain: meta.domain ?? domain, url: finalUrl
+        }))
       })
       notify?.('bookmarks:updated', updated)
       // Fire-and-forget AI collection suggestion (no-ops without an API key)
@@ -317,13 +344,22 @@ export function registerIpc(getWindow) {
       .filter(
         (b) =>
           !b.deleted_at &&
-          b.image_path &&
-          (!(b.image_w > 0 && b.image_h > 0) || b.preview_source == null)
+          (b.image_path
+            ? !(b.image_w > 0 && b.image_h > 0) || b.preview_source == null
+            : b.ph_aspect == null)
       )
     let measured = 0
     let sourced = 0
+    let placeholders = 0
     for (const b of targets) {
       const patch = {}
+      // No preview: this row needs a gradient placeholder, not a measurement.
+      if (!b.image_path) {
+        Object.assign(patch, await placeholderFacts(b))
+        if (patch.ph_aspect != null) placeholders++
+        if (Object.keys(patch).length) db.updateBookmark(b.id, patch)
+        continue
+      }
       if (!(b.image_w > 0 && b.image_h > 0)) {
         const size = await imageSize(join(db.imagesDir(), b.image_path))
         if (size) {
@@ -348,8 +384,8 @@ export function registerIpc(getWindow) {
     }
     // One notification for the whole pass, not one per card — the layout should
     // settle once rather than shuffle as each measurement lands.
-    if (measured || sourced) notify('bookmarks:changed')
-    return { ok: true, scanned: targets.length, measured, sourced }
+    if (measured || sourced || placeholders) notify('bookmarks:changed')
+    return { ok: true, scanned: targets.length, measured, sourced, placeholders }
   })
 
   // ── Dead-link background sweep (links unchecked in 7+ days) ──
