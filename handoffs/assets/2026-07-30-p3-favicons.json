@@ -1,0 +1,575 @@
+[
+  {
+    "domain": "atipoillustrations.com",
+    "favicon": "fb222a988ec31a9e.png",
+    "status": "achromatic",
+    "colours": [],
+    "chromaticFrac": 0
+  },
+  {
+    "domain": "bio.link",
+    "favicon": "0c8c0804b96ef5eb.png",
+    "status": "two-plus",
+    "colours": [
+      {
+        "hueBin": 17,
+        "share": 0.3262823902696986,
+        "n": 617,
+        "hex": "#f96070"
+      },
+      {
+        "hueBin": 16,
+        "share": 0.2088841882601798,
+        "n": 395,
+        "hex": "#e663a4"
+      },
+      {
+        "hueBin": 15,
+        "share": 0.17662612374405076,
+        "n": 334,
+        "hex": "#db67c7"
+      },
+      {
+        "hueBin": 14,
+        "share": 0.15282919090428346,
+        "n": 289,
+        "hex": "#cd60e5"
+      }
+    ],
+    "chromaticFrac": 0.821
+  },
+  {
+    "domain": "bland.ai",
+    "favicon": "7b44ef2757a64648.png",
+    "status": "one-colour",
+    "colours": [
+      {
+        "hueBin": 17,
+        "share": 0.9495841995841996,
+        "n": 1827,
+        "hex": "#ca081b"
+      }
+    ],
+    "chromaticFrac": 0.835
+  },
+  {
+    "domain": "calebwu.ca",
+    "favicon": "cb8fc9918b8bb57d.png",
+    "status": "two-plus",
+    "colours": [
+      {
+        "hueBin": 0,
+        "share": 0.8729508196721312,
+        "n": 1278,
+        "hex": "#f54900"
+      },
+      {
+        "hueBin": 1,
+        "share": 0.12704918032786885,
+        "n": 186,
+        "hex": "#fd7d03"
+      }
+    ],
+    "chromaticFrac": 1
+  },
+  {
+    "domain": "cardinalapp.io",
+    "favicon": "e653ad12b33ead81.png",
+    "status": "two-plus",
+    "colours": [
+      {
+        "hueBin": 2,
+        "share": 0.7335390946502057,
+        "n": 713,
+        "hex": "#d4ba2d"
+      },
+      {
+        "hueBin": 10,
+        "share": 0.13991769547325103,
+        "n": 136,
+        "hex": "#678dbe"
+      }
+    ],
+    "chromaticFrac": 0.704
+  },
+  {
+    "domain": "charlespatterson.co",
+    "favicon": "df6b861766deecd0.png",
+    "status": "achromatic",
+    "colours": [],
+    "chromaticFrac": 0
+  },
+  {
+    "domain": "charlsyang.com",
+    "favicon": "ca6da8c8c098e197.png",
+    "status": "one-colour",
+    "colours": [
+      {
+        "hueBin": 0,
+        "share": 1,
+        "n": 796,
+        "hex": "#e65537"
+      }
+    ],
+    "chromaticFrac": 0.345
+  },
+  {
+    "domain": "create.imagica.ai",
+    "favicon": null,
+    "status": "no-favicon",
+    "colours": []
+  },
+  {
+    "domain": "cycle.app",
+    "favicon": "58a3b5e2650312d9.png",
+    "status": "one-colour",
+    "colours": [
+      {
+        "hueBin": 10,
+        "share": 1,
+        "n": 984,
+        "hex": "#146ff8"
+      }
+    ],
+    "chromaticFrac": 1
+  },
+  {
+    "domain": "danilosaito.com",
+    "favicon": "2c33830c57170a95.png",
+    "status": "achromatic",
+    "colours": [],
+    "chromaticFrac": 0
+  },
+  {
+    "domain": "denisabdullin.com",
+    "favicon": "2884ab704b121e54.jpg",
+    "status": "one-colour",
+    "colours": [
+      {
+        "hueBin": 0,
+        "share": 0.7096774193548387,
+        "n": 220,
+        "hex": "#dbc7c1"
+      }
+    ],
+    "chromaticFrac": 0.135
+  },
+  {
+    "domain": "designengineer.tools",
+    "favicon": "d22bbdee0410548d.ico",
+    "status": "unreadable",
+    "colours": []
+  },
+  {
+    "domain": "diagram.com",
+    "favicon": "78960e775f3437bb.png",
+    "status": "two-plus",
+    "colours": [
+      {
+        "hueBin": 0,
+        "share": 0.38198757763975155,
+        "n": 369,
+        "hex": "#ff5637"
+      },
+      {
+        "hueBin": 7,
+        "share": 0.18944099378881987,
+        "n": 183,
+        "hex": "#24cc71"
+      },
+      {
+        "hueBin": 9,
+        "share": 0.17598343685300208,
+        "n": 170,
+        "hex": "#00b7ff"
+      },
+      {
+        "hueBin": 12,
+        "share": 0.16459627329192547,
+        "n": 159,
+        "hex": "#864fff"
+      }
+    ],
+    "chromaticFrac": 0.995
+  },
+  {
+    "domain": "equip.money",
+    "favicon": "7162bfdb3de7444d.png",
+    "status": "two-plus",
+    "colours": [
+      {
+        "hueBin": 11,
+        "share": 0.31069827033952596,
+        "n": 485,
+        "hex": "#4865f3"
+      },
+      {
+        "hueBin": 10,
+        "share": 0.28443305573350414,
+        "n": 444,
+        "hex": "#0a376f"
+      },
+      {
+        "hueBin": 14,
+        "share": 0.19730941704035873,
+        "n": 308,
+        "hex": "#fdc1ff"
+      },
+      {
+        "hueBin": 0,
+        "share": 0.18641896220371557,
+        "n": 291,
+        "hex": "#f97758"
+      }
+    ],
+    "chromaticFrac": 0.678
+  },
+  {
+    "domain": "evasanchez.info",
+    "favicon": "ad5f25a928a86246.png",
+    "status": "achromatic",
+    "colours": [],
+    "chromaticFrac": 0
+  },
+  {
+    "domain": "fable.app",
+    "favicon": null,
+    "status": "no-favicon",
+    "colours": []
+  },
+  {
+    "domain": "fasset.com",
+    "favicon": "6bfee4cf9a2408a6.png",
+    "status": "one-colour",
+    "colours": [
+      {
+        "hueBin": 7,
+        "share": 1,
+        "n": 2184,
+        "hex": "#34be7b"
+      }
+    ],
+    "chromaticFrac": 0.948
+  },
+  {
+    "domain": "feta.io",
+    "favicon": "2c6f26c88444aca2.png",
+    "status": "one-colour",
+    "colours": [
+      {
+        "hueBin": 9,
+        "share": 1,
+        "n": 848,
+        "hex": "#1bdddd"
+      }
+    ],
+    "chromaticFrac": 1
+  },
+  {
+    "domain": "formcarry.com",
+    "favicon": "b3c38acd0f84af9f.png",
+    "status": "one-colour",
+    "colours": [
+      {
+        "hueBin": 10,
+        "share": 1,
+        "n": 462,
+        "hex": "#0077ff"
+      }
+    ],
+    "chromaticFrac": 1
+  },
+  {
+    "domain": "gilhuybrecht.com",
+    "favicon": null,
+    "status": "no-favicon",
+    "colours": []
+  },
+  {
+    "domain": "goarmonia.com",
+    "favicon": "54143d4bc882ff81.png",
+    "status": "achromatic",
+    "colours": [
+      {
+        "hueBin": 2,
+        "share": 0.8617021276595744,
+        "n": 81,
+        "hex": "#eae8dc"
+      },
+      {
+        "hueBin": 5,
+        "share": 0.13829787234042554,
+        "n": 13,
+        "hex": "#304a2c"
+      }
+    ],
+    "chromaticFrac": 0.041
+  },
+  {
+    "domain": "good-fella.com",
+    "favicon": "9289f0b0f5a0a23d.png",
+    "status": "one-colour",
+    "colours": [
+      {
+        "hueBin": 0,
+        "share": 1,
+        "n": 1957,
+        "hex": "#f1440d"
+      }
+    ],
+    "chromaticFrac": 0.849
+  },
+  {
+    "domain": "gotune.io",
+    "favicon": null,
+    "status": "no-favicon",
+    "colours": []
+  },
+  {
+    "domain": "ivee.so",
+    "favicon": null,
+    "status": "no-favicon",
+    "colours": []
+  },
+  {
+    "domain": "joelifrieri.com",
+    "favicon": "5405070eb3096d64.png",
+    "status": "two-plus",
+    "colours": [
+      {
+        "hueBin": 12,
+        "share": 0.35920177383592017,
+        "n": 162,
+        "hex": "#6246e9"
+      },
+      {
+        "hueBin": 17,
+        "share": 0.2660753880266075,
+        "n": 120,
+        "hex": "#fe96af"
+      },
+      {
+        "hueBin": 13,
+        "share": 0.1973392461197339,
+        "n": 89,
+        "hex": "#955dd4"
+      }
+    ],
+    "chromaticFrac": 0.199
+  },
+  {
+    "domain": "jumpseatupgrades.com",
+    "favicon": "6ce977e7c814cffa.png",
+    "status": "one-colour",
+    "colours": [
+      {
+        "hueBin": 3,
+        "share": 0.9212494500659921,
+        "n": 2094,
+        "hex": "#d0f830"
+      }
+    ],
+    "chromaticFrac": 0.987
+  },
+  {
+    "domain": "junhyungpark.com",
+    "favicon": "ebcbaeebcc3cf455.png",
+    "status": "achromatic",
+    "colours": [],
+    "chromaticFrac": 0
+  },
+  {
+    "domain": "junhyungpark.com",
+    "favicon": "ebcbaeebcc3cf455.png",
+    "status": "achromatic",
+    "colours": [],
+    "chromaticFrac": 0
+  },
+  {
+    "domain": "koe.design",
+    "favicon": "b63e3f5ad608f516.png",
+    "status": "achromatic",
+    "colours": [],
+    "chromaticFrac": 0
+  },
+  {
+    "domain": "lucascruz.work",
+    "favicon": "2e7132eb9f7f6755.png",
+    "status": "achromatic",
+    "colours": [],
+    "chromaticFrac": 0
+  },
+  {
+    "domain": "mccann.fr",
+    "favicon": "41fc332bb4a9c0e3.png",
+    "status": "achromatic",
+    "colours": [],
+    "chromaticFrac": 0
+  },
+  {
+    "domain": "meetingsrecorder.com",
+    "favicon": "3cef961c862fc9bd.ico",
+    "status": "unreadable",
+    "colours": []
+  },
+  {
+    "domain": "michaeldesigns.co",
+    "favicon": "0a9fb68bf94b9bbc.png",
+    "status": "two-plus",
+    "colours": [
+      {
+        "hueBin": 1,
+        "share": 0.5124250214224507,
+        "n": 598,
+        "hex": "#926e2b"
+      },
+      {
+        "hueBin": 2,
+        "share": 0.47900599828620394,
+        "n": 559,
+        "hex": "#a7873d"
+      }
+    ],
+    "chromaticFrac": 0.8
+  },
+  {
+    "domain": "otherland.studio",
+    "favicon": "767aacb44272c9f6.png",
+    "status": "two-plus",
+    "colours": [
+      {
+        "hueBin": 13,
+        "share": 0.5988372093023255,
+        "n": 206,
+        "hex": "#af9dcc"
+      },
+      {
+        "hueBin": 12,
+        "share": 0.38372093023255816,
+        "n": 132,
+        "hex": "#897fa8"
+      }
+    ],
+    "chromaticFrac": 0.149
+  },
+  {
+    "domain": "parthean.com",
+    "favicon": "ed3e2844893d746e.png",
+    "status": "one-colour",
+    "colours": [
+      {
+        "hueBin": 15,
+        "share": 1,
+        "n": 1558,
+        "hex": "#f9acf9"
+      }
+    ],
+    "chromaticFrac": 0.716
+  },
+  {
+    "domain": "patch.tech",
+    "favicon": "915aaf203264a3ad.png",
+    "status": "achromatic",
+    "colours": [],
+    "chromaticFrac": 0
+  },
+  {
+    "domain": "posterramen.devslovecoffee.com",
+    "favicon": "c83d70337ba02aa9.ico",
+    "status": "unreadable",
+    "colours": []
+  },
+  {
+    "domain": "produlis.com",
+    "favicon": "99be42bb680377d3.png",
+    "status": "achromatic",
+    "colours": [],
+    "chromaticFrac": 0
+  },
+  {
+    "domain": "programa.design",
+    "favicon": "6be0855cd0c7a359.png",
+    "status": "achromatic",
+    "colours": [],
+    "chromaticFrac": 0
+  },
+  {
+    "domain": "scotchpos.com",
+    "favicon": "fdaf163e71aa57d0.png",
+    "status": "one-colour",
+    "colours": [
+      {
+        "hueBin": 1,
+        "share": 1,
+        "n": 877,
+        "hex": "#de9459"
+      }
+    ],
+    "chromaticFrac": 0.381
+  },
+  {
+    "domain": "strut.so",
+    "favicon": "2d1dd20460547742.png",
+    "status": "one-colour",
+    "colours": [
+      {
+        "hueBin": 1,
+        "share": 0.9993777224642191,
+        "n": 1606,
+        "hex": "#d2c1a8"
+      }
+    ],
+    "chromaticFrac": 0.729
+  },
+  {
+    "domain": "studiovoila.com",
+    "favicon": "9f272a4faef8bdf8.png",
+    "status": "two-plus",
+    "colours": [
+      {
+        "hueBin": 17,
+        "share": 0.3363526570048309,
+        "n": 557,
+        "hex": "#fb2b4e"
+      },
+      {
+        "hueBin": 0,
+        "share": 0.3073671497584541,
+        "n": 509,
+        "hex": "#fa5d3f"
+      },
+      {
+        "hueBin": 1,
+        "share": 0.19685990338164253,
+        "n": 326,
+        "hex": "#fd7d17"
+      },
+      {
+        "hueBin": 16,
+        "share": 0.15942028985507245,
+        "n": 264,
+        "hex": "#f01170"
+      }
+    ],
+    "chromaticFrac": 0.917
+  },
+  {
+    "domain": "supahero.io",
+    "favicon": "6da4e748599e5260.png",
+    "status": "achromatic",
+    "colours": [],
+    "chromaticFrac": 0
+  },
+  {
+    "domain": "talkbase.io",
+    "favicon": null,
+    "status": "no-favicon",
+    "colours": []
+  },
+  {
+    "domain": "thepricer.co",
+    "favicon": null,
+    "status": "no-favicon",
+    "colours": []
+  }
+]
