@@ -696,15 +696,53 @@ select {
    feTurbulence at a fixed seed was verified byte-identical across two separate
    app launches before this shipped — the blur that used to sit on
    .card-img-backdrop was not, and it cost twenty calibration runs to find. */
+/* TWO grain layers, because one cannot cover the whole tonal range.
+
+   `overlay` is the right blend for the lit regions and does nothing at all on
+   near-black — which is most of every card, and exactly where the references
+   show their heaviest grain. `screen` covers the blacks but lifts the entire
+   card (measured: darkest corner 47 against overlay's 19, mean 81 against 40),
+   washing the frame grey — muddiness by another route.
+
+   So: overlay for the lit part, and a second pass on normal blend at low
+   opacity for the dark part. Normal blend adds a flat speckle everywhere, which
+   on the lit regions is swamped by the overlay layer and on black is the only
+   thing visible. It does lift the black floor by about ten of 255. That is a
+   deliberate trade — the references have no true black either.
+
+   Different seeds on the two layers. Same seed would put both noise fields in
+   the same pixels and double their amplitude, which reads as coarser, dirtier
+   grain rather than as more of it. */
+.card-ph.is-gradient::before,
 .card-ph.is-gradient::after {
   content: '';
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' seed='7' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
   background-repeat: repeat;
-  opacity: 0.28;
+}
+/* baseFrequency 0.55, not 0.9: LOWER frequency means LARGER noise features, so
+   this is the coarser grain. numOctaves 2 keeps the specks distinct instead of
+   blurring them into fog. */
+.card-ph.is-gradient::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.55' numOctaves='2' seed='7' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: 0.72;
   mix-blend-mode: overlay;
+}
+/* The dark-region pass. Opacity is low because normal blend is unforgiving —
+   every point of it is a point off the black floor, and the page behind these
+   cards sits at luminance 8. The ceiling is therefore not taste but the point
+   at which a card's dark half stops reading as a dark surface and starts
+   reading as a grey box: 0.11 puts the floor at about 22, just under the 24 a
+   real dark thumbnail (antimetal.com) already occupies in the same grid, so
+   the placeholders sit no lighter than the images they stand in for.
+
+   Measured effect in the dark regions: noise sigma 3.5 -> 4.5, against a
+   1.7-2.2 baseline on grainless cards. Judged at true card size on a retina
+   panel, not in a blow-up — grain that only reads when enlarged is not there. */
+.card-ph.is-gradient::after {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.55' numOctaves='2' seed='23' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: 0.11;
 }
 
 /* States. A thumbnail card lifts its veil on hover and shows a focus ring; a
