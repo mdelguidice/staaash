@@ -41,6 +41,16 @@ ditto ~/Library/Application\ Support/staaash ~/Desktop/staaash-data
 Optionally also File → Export JSON from the app before quitting, as a belt-and-
 suspenders backup.
 
+Now actually get that folder onto the new Mac — AirDrop, external drive, iCloud.
+This is its own step, and the copy in step 3 fails with `ditto: Cannot get the
+real path for source` if it was skipped. Note where it lands: AirDrop delivers
+to `~/Downloads`, not `~/Desktop`, and an external drive mounts under
+`/Volumes/`. If you lose track of it:
+
+```sh
+mdfind -name staaash-data
+```
+
 Push any uncommitted repo work too. `.cache/`, `desktop/out/`, `desktop/dist/`
 and `visual-diff/*` are gitignored and will not travel with the clone; only
 `visual-diff/figma/` is deliberately kept.
@@ -88,6 +98,37 @@ first is recoverable — quit and overwrite the folder.
   you restored already claims migration ran.
 - **API key.** It rides along inside `staaash.db` in plaintext. If you choose
   to start from an empty database instead, re-enter it in Settings.
+
+## Troubleshooting
+
+**App quits instantly; running
+`/Applications/staaash.app/Contents/MacOS/staaash` from Terminal prints
+`NODE_MODULE_VERSION 137 ... requires 146`.** The packaged better-sqlite3 binary
+targets Node rather than Electron. `scripts/fetch-sqlite-prebuild.mjs` stamps
+what it fetched for and re-fetches on a mismatch, so a clean reinstall fixes it:
+
+```sh
+cd desktop
+rm -rf node_modules/better-sqlite3/build
+npm install
+npm run dist
+```
+
+Older checkouts of that script skipped the fetch whenever any binary was already
+present, which silently packaged better-sqlite3's own Node build. If the app
+still crashes this way, make sure you are on a revision that stamps.
+
+**"staaash is damaged and can't be opened" / "developer cannot be verified".**
+A locally built `.app` is ad-hoc signed, and transferring it between machines
+sets the quarantine attribute. Either rebuild on this machine or clear it:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/staaash.app
+```
+
+**"not supported on this Mac".** The build is arm64-only — see the "Why arm64
+only" note in `desktop/electron-builder.js`. Check with `uname -m`; `x86_64`
+means Intel, and shipping there is real work, not a config flag.
 
 ## Verify
 

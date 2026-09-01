@@ -32,7 +32,11 @@ cache. Remote-only previews are backfilled into the cache lazily as cards mount.
 ## Pinned versions (don't bump casually)
 
 - `electron ~42.1.0` — ABI 146, the newest ABI with an official better-sqlite3
-  prebuilt binary. Electron 43 (ABI 148) has none yet, which forces a node-gyp
+  prebuilt binary. `scripts/fetch-sqlite-prebuild.mjs` stamps the binary with the
+  Electron version, platform and arch it fetched for, and re-fetches on any
+  mismatch — without that, better-sqlite3's own install (which grabs a build for
+  the host *Node*) wins and the packaged app dies on launch with
+  `NODE_MODULE_VERSION`. Electron 43 (ABI 148) has none yet, which forces a node-gyp
   source build. Check https://github.com/WiseLibs/better-sqlite3/releases
   before bumping.
 - `vite ^7` + `@vitejs/plugin-react ^5` — electron-vite 5 peers on vite 7.
