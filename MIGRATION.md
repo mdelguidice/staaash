@@ -52,7 +52,7 @@ Local builds are arm64-only and ad-hoc signed (see the header comment in
 picks up a quarantine flag in transit that Gatekeeper will block.
 
 ```sh
-git clone <remote> staaash && cd staaash/desktop
+git clone https://github.com/mdelguidice/staaash.git staaash && cd staaash/desktop
 npm install        # postinstall fetches the better-sqlite3 Electron prebuild
 npm run dist       # → dist/staaash.dmg + dist/mac-arm64/staaash.app
 ```
