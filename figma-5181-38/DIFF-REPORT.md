@@ -20,9 +20,10 @@ To finish the pixel step properly: export `5181-38` at 2x, commit it as `figma-5
 
 ## Residual differences (node IDs)
 
+`5181:45` was originally built with the inner shadow the brief listed; `get_design_context` returned no effect, the export shows none, and the live file was confirmed to have none, so it was removed.
+
 | Node | What | Why it is still there |
 |---|---|---|
-| `5181:45` | Active row has `inset 0 0 4px #FAFFE6` per the brief's trap list. `get_design_context` on the node returned **no** effect, and the committed export shows a flat `#CCFF00` to the edge. | Kept as specified; edge pixels are ~+20 lighter than the export. Delete `--active-row-inner-shadow` if the live file has no effect either. |
 | `5181:539` | Blur overlay gradient stops. The node is a vector; its gradient lives in the SVG, which is on the blocked host. | Built as `linear-gradient(180deg, rgba(8,8,8,0), #080808)` + `backdrop-filter: blur(12px)`. Over the plain background the export shows no visible tint, consistent with an ink-coloured gradient; the alpha curve is unverified. |
 | `5181:309`, `5181:386`, `5181:502` | Bottom-row thumbnails are cropped from the export **under** the blur, so the page blurs already-blurred pixels. They are also only as tall as the frame shows (77/312/232 px). | No unblurred source available. |
 | `5317:798`, `5317:802`, `5317:806` | Tag dot fills for `ai`, `app design`, `banking`. Not variable-bound (the other four are: teal/sky/cobalt/violet), and the ellipse SVGs are blocked. | Set to `rose-500`, `tangerine-500`, `moss-500` from a high-res screenshot of `5270:138`. **These are the only three values in the build not read from node data.** |
