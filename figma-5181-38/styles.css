@@ -1,0 +1,360 @@
+/* Rebuild of Figma node 5181:38 ("1000 -> Staaash -> Default"), 1440x792.
+   Every value below is read from get_design_context / get_variable_defs on the
+   node it belongs to. Letter-spacing in Figma is a percentage of the font size;
+   it is expressed in em here so it survives any font-size change. */
+
+:root {
+  /* ── Figma variables (get_variable_defs on 5181:38) ─────────────────── */
+  --ink-500: #080808;
+  --acid-50: #f5ffe1;
+  --acid-300: #d7ff6e;
+  --acid-500: #ccff00;
+  --acid-600: #b9e900;
+  --acid-900: #0d1d00;
+  --acid-950: #040d00;
+  --electric-lime-50: #faffe6;
+  --electric-lime-100: #f1ffb8;
+  --mist-300: #e0e0e0;
+  --mist-800: #414141;
+  --cod-gray-300: #383434;
+  --text-muted: #494949;
+  --text-subtle: #8b8b8b;
+  --rose-500: #f43f5e;
+  --coral-500: #fb6b4d;
+  --tangerine-500: #f59e0b;
+  --moss-500: #5ba744;
+  --teal-500: #14b8a6;
+  --sky-500: #38bdf8;
+  --cobalt-500: #4f6bed;
+  --violet-500: #8b5cf6;
+  --icon-muted: #494949;
+  --button-primary-bg-default: #ccff001a;
+  --button-primary-bg-hover: #ccff00;
+  --stroke-emphasis: #b9e9001a;
+  --space-50: 4px;
+  --radius-150: 12px;
+
+  /* ── Raw fills / strokes that are not variables ─────────────────────── */
+  --sidebar-fill: rgba(246, 243, 243, 0.01);
+  --sidebar-stroke: rgba(250, 255, 230, 0.06);         /* 5181:39 right, 5181:193 top */
+  --header-stroke: rgba(246, 243, 243, 0.04);          /* 5181:201 bottom */
+  --badge-fill: rgba(246, 243, 243, 0.08);             /* 5181:57 etc. */
+  --chip-fill: rgba(246, 243, 243, 0.04);              /* 5317:792, 5181:194 */
+  --collapse-glyph: rgba(250, 255, 230, 0.8);          /* 5181:204 */
+  --control-fill: rgba(32, 30, 30, 0.64);              /* 5181:213, 5181:223, 5181:553 */
+  --control-stroke-dark: #201e1e;                       /* 5181:223 */
+  --segment-active-fill: rgba(98, 98, 98, 0.4);        /* 5181:214 */
+  --card-stroke: rgba(250, 255, 230, 0.04);            /* 5181:233 etc. */
+  --card-link-fill: rgba(250, 255, 230, 0.08);         /* 5181:259 */
+  --search-fill: rgba(32, 30, 30, 0.92);               /* 5181:540 */
+  --search-stroke: rgba(250, 255, 230, 0.04);
+  --search-shadow: 0 4px 8px 0 rgba(3, 3, 3, 0.2);
+  --ai-fill: rgba(79, 107, 237, 0.2);                  /* 5181:541 */
+  --ai-stroke: rgba(79, 107, 237, 0.1);
+  --ai-shadow: 0 0 12px 0 rgba(122, 162, 255, 0.1);
+  --ai-text: #b4ccff;
+  --shortcut-stroke: rgba(250, 255, 230, 0.1);         /* 5181:553 */
+  --shortcut-text: #b6b6bc;
+  --status-dot-shadow: 0 0 8px 0 var(--acid-300);      /* 5181:195 */
+
+  /* ── Radii ───────────────────────────────────────────────────────────── */
+  --radius-frame: 18px;
+  --radius-card: 16px;
+  --radius-control: 10px;
+  --radius-row: 8px;
+  --radius-link: 6px;
+  --radius-badge: 4px;
+  --radius-fav: 3px;
+  --radius-fav-sm: 2px;
+  --radius-pill: 999px;
+
+  /* ── Type ────────────────────────────────────────────────────────────── */
+  --font-ui: 'Instrument Sans', system-ui, sans-serif;
+  --font-domain: 'Inter', system-ui, sans-serif;       /* card domain text only */
+
+  /* size / weight / line-height / tracking(% of size → em) */
+  --t-row: 500 14px/1 var(--font-ui);        --ls-row: 0.02em;    /* 0.28px */
+  --t-label: 600 10px/1 var(--font-ui);      --ls-label: 0.06em;  /* 0.6px  */
+  --t-badge: 600 10px/1 var(--font-ui);      --ls-badge: 0;
+  --t-chip: 400 12px/1 var(--font-ui);       --ls-chip: 0.04em;   /* 0.48px */
+  --t-button: 500 12px/1 var(--font-ui);     --ls-button: 0.02em; /* 0.24px */
+  --t-domain: 500 10px/1 var(--font-domain); --ls-domain: 0.01em; /* 0.1px  */
+  --t-date: 400 10px/1 var(--font-ui);       --ls-date: 0.01em;   /* 0.1px  */
+  --t-ai: 600 12px/10px var(--font-ui);      --ls-ai: 0.03em;     /* 0.36px */
+  --t-search: 400 14px/14px var(--font-ui);  --ls-search: 0.03em; /* 0.42px */
+  --t-shortcut: 400 12px/12px var(--font-ui);
+  --t-shortcut-slash: 500 12px/12px var(--font-ui);
+  --t-footer: 400 10px/1 var(--font-ui);     --ls-footer: 0.04em; /* 0.4px  */
+}
+
+/* ── Base ──────────────────────────────────────────────────────────────── */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { background: var(--ink-500); }
+body { width: 1440px; height: 792px; overflow: hidden; -webkit-font-smoothing: antialiased; }
+img { display: block; }
+p { white-space: nowrap; }
+
+.frame {
+  position: relative;
+  width: 1440px;
+  height: 792px;
+  overflow: hidden;
+  border-radius: var(--radius-frame);
+  background: var(--ink-500);
+  color: var(--acid-50);
+}
+
+/* ── Sidebar 5181:39 ───────────────────────────────────────────────────── */
+.sidebar {
+  position: absolute;
+  left: 0; top: 0;
+  width: 264px; height: 792px;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 20px;
+  padding: 20px 20px 16px;
+  background: var(--sidebar-fill);
+}
+/* The 1px right stroke sits just outside the 264 box (x=264..265 in the export),
+   so it takes no layout and the rows measure the full 224. */
+.sidebar::after {
+  content: ''; position: absolute; left: 264px; top: 0;
+  width: 1px; height: 100%; background: var(--sidebar-stroke);
+}
+.sidebar > * { width: 100%; }
+
+.controls { display: flex; align-items: center; height: 12px; }
+.controls img { width: 52px; height: 12px; }
+
+.section { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.section-label {
+  font: var(--t-label); letter-spacing: var(--ls-label);
+  text-transform: uppercase; color: var(--text-muted);
+}
+.rows { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; width: 100%; }
+
+.row {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; max-width: 224px; height: 32px; flex-shrink: 0;
+  padding: 8px; border-radius: var(--radius-row);
+}
+.row .row-text { font: var(--t-row); letter-spacing: var(--ls-row); color: var(--acid-50); }
+.row.is-active {
+  background: var(--button-primary-bg-hover);
+}
+.row .icon { flex: 0 0 auto; width: 16px; height: 16px; }
+.row .icon img { width: 100%; height: 100%; }
+.row .icon.w15 { width: 15px; }
+.row .label { flex: 1 0 0; min-width: 1px; display: flex; align-items: center; }
+.row .label p { font: var(--t-row); letter-spacing: var(--ls-row); color: var(--acid-50); }
+.row.is-active .label p { color: var(--acid-950); }
+.row .label.items-end { align-items: flex-end; }
+
+.badge {
+  display: flex; align-items: center; justify-content: center;
+  padding: 4px; border-radius: var(--radius-badge);
+  background: var(--badge-fill);
+}
+.badge p { font: var(--t-badge); letter-spacing: var(--ls-badge); color: var(--acid-50); opacity: 0.4; }
+.row.is-active .badge { background: var(--acid-600); }
+.row.is-active .badge p { color: var(--acid-900); opacity: 0.8; }
+
+/* Collections / Tags: header row is padded 4, rows are indented 4 (pl-16 + 4 = 20) */
+.section.indented { padding-left: 0; gap: 2px; margin-left: -4px; width: calc(100% + 4px); }
+.section-header { display: flex; align-items: center; width: 100%; }
+.section-header-inner { flex: 1 0 0; min-width: 1px; display: flex; align-items: center; gap: 8px; padding: 4px; }
+.section-header-inner.gap-4 { gap: var(--space-50); }
+.section-header-inner .label-wrap { flex: 1 0 0; min-width: 1px; display: flex; align-items: center; gap: 2px; }
+.section-header-inner .icon16 { flex: 0 0 auto; width: 16px; height: 16px; }
+.section-header-inner .icon16 img { width: 16px; height: 16px; }
+.section-header-inner .clip16 { overflow: hidden; display: flex; align-items: center; justify-content: center; }
+/* 5270:253 is a 20px glyph clipped to 16; the crop already is the clipped 16 */
+.section-header-inner .clip16 img { width: 16px; height: 16px; flex: 0 0 auto; }
+
+.rows.indented { padding-left: 4px; }
+.row-wrap { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; width: 100%; max-width: 224px; max-height: 32px; }
+/* Collection items are 34 tall in Figma, sitting at y=-1 inside a 32 clip */
+.row-wrap .row.h34 { height: 34px; padding: 9px 8px; }
+.row-wrap.top { justify-content: flex-start; }
+
+.chips { display: flex; flex-wrap: wrap; align-content: flex-start; align-items: flex-start; gap: 4px; padding-left: 4px; width: 100%; }
+.chip {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 4px 8px 6px; border-radius: var(--radius-pill);
+  background: var(--chip-fill);
+}
+.chip .dot { width: 4px; height: 6px; position: relative; }
+.chip .dot::after {
+  content: ''; position: absolute; left: 0; top: 2px;
+  width: 4px; height: 4px; border-radius: 50%; background: var(--dot, currentColor);
+}
+.chip p { font: var(--t-chip); letter-spacing: var(--ls-chip); color: var(--text-subtle); }
+.chips .row-wrap { width: 224px; }
+
+.misc { flex: 1 0 0; min-height: 1px; display: flex; flex-direction: column; justify-content: flex-end; align-items: flex-start; margin-left: -4px; width: calc(100% + 4px); }
+.misc .row-wrap { max-width: none; max-height: none; }
+.misc .row { max-width: none; height: 30px; padding: 8px 12px; }
+.misc .row .icon { width: 14px; height: 14px; }
+
+.footer {
+  display: flex; align-items: center; justify-content: space-between;
+  padding-top: 16px; margin: 0 -20px; width: 264px; padding-left: 20px; padding-right: 20px;
+  border-top: 1px solid var(--sidebar-stroke);
+}
+.status-pill {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px; border-radius: var(--radius-pill);
+  background: var(--chip-fill);
+}
+.status-pill .status-dot { width: 6px; height: 6px; border-radius: var(--radius-fav); background: var(--acid-500); box-shadow: var(--status-dot-shadow); }
+.status-pill p { font: var(--t-footer); letter-spacing: var(--ls-footer); color: var(--mist-300); }
+.footer .icon24 { width: 24px; height: 24px; }
+.footer .icon24 img { width: 24px; height: 24px; }
+
+/* ── Header 5181:201 ───────────────────────────────────────────────────── */
+.header {
+  position: absolute; left: 264px; top: 0;
+  width: 1176px; height: 70px;
+  display: flex; align-items: center;
+  padding: 20px 20px 19px;
+  border-bottom: 1px solid var(--header-stroke);
+}
+.header-left { flex: 1 0 0; min-width: 1px; display: flex; align-items: center; gap: 20px; }
+.collapse {
+  display: flex; align-items: center; overflow: hidden;
+  padding: 1px; border-radius: var(--radius-badge); /* 2px inset incl. the 1px stroke */
+  border: 1px solid var(--acid-50);
+  width: 16px; height: 12px; flex: 0 0 auto;
+}
+.collapse span { width: 6px; height: 8px; border-radius: 2px; background: var(--collapse-glyph); flex: 0 0 auto; }
+.collapse span.expand { opacity: 0; }
+.header-title { display: flex; align-items: center; gap: 4px; }
+.header-title p { font: var(--t-row); letter-spacing: var(--ls-row); color: var(--acid-50); }
+.header-sub { display: flex; align-items: center; justify-content: center; gap: 2px; }
+.header-sub p { opacity: 0.4; }
+.header-sub .icon18 { width: 18px; height: 18px; }
+.header-sub .icon18 img { width: 18px; height: 18px; }
+
+.header-right { display: flex; align-items: flex-start; gap: 8px; height: 32px; }
+.btn-new {
+  display: flex; align-items: center; justify-content: center; align-self: stretch;
+  padding: 3px; border-radius: var(--radius-control); /* 4px inset incl. the 1px stroke */
+  background: var(--button-primary-bg-default);
+  border: 1px solid var(--stroke-emphasis);
+}
+.btn-new .inner { display: flex; align-items: center; justify-content: center; gap: 4px; padding: 4px 6px; }
+.btn-new .icon8 { width: 8px; height: 8px; }
+.btn-new .icon8 img { width: 8px; height: 8px; }
+.btn-new p { font: var(--t-button); letter-spacing: var(--ls-button); color: var(--acid-500); }
+
+.view-mode {
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  padding: 3px; border-radius: var(--radius-control); /* 4px inset incl. the 1px stroke */
+  background: var(--control-fill);
+  border: 1px solid var(--mist-800);
+}
+.view-mode .seg { display: flex; align-items: center; justify-content: center; padding: 4px 6px; }
+.view-mode .seg.is-active { padding: 6px; border-radius: var(--radius-link); background: var(--segment-active-fill); }
+.view-mode p { font: var(--t-button); letter-spacing: var(--ls-button); color: var(--mist-800); }
+.view-mode .seg.is-active p { color: var(--mist-300); }
+
+.btn-icon {
+  display: flex; align-items: center; justify-content: center; align-self: stretch; gap: 4px;
+  padding: 5px; border-radius: var(--radius-control); /* 6px inset incl. the 1px stroke */
+  background: var(--control-fill);
+  border: 1px solid var(--control-stroke-dark);
+}
+.btn-icon .icon20 { width: 20px; height: 20px; }
+.btn-icon .icon20 img { width: 20px; height: 20px; }
+
+/* ── Content + cards 5181:230 ──────────────────────────────────────────── */
+.content {
+  position: absolute; left: 264px; top: 70px;
+  width: 1176px; height: 722px;
+  overflow-y: auto; overflow-x: hidden;
+  padding: 20px;
+  scrollbar-width: none;
+}
+.content::-webkit-scrollbar { display: none; }
+.cards { display: flex; flex-wrap: wrap; align-content: flex-start; align-items: flex-start; gap: 20px; width: 1156px; }
+.col { display: flex; flex-direction: column; align-items: flex-start; gap: var(--radius-150); width: 365px; }
+.col.center { justify-content: center; }
+
+.card { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; width: 100%; border-radius: var(--radius-card); }
+.card.short { height: 223px; }
+.card.tall { height: 378px; }
+.thumb {
+  position: relative; width: 100%; overflow: hidden;
+  border-radius: var(--radius-card);
+}
+/* Figma's inside stroke is painted over the image fill, not around it */
+.thumb::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--card-stroke);
+}
+.card.short .thumb { height: 195px; flex: 0 0 auto; }
+.card.tall .thumb { flex: 1 0 0; min-height: 1px; }
+.thumb img { position: absolute; left: 0; top: 0; width: 365px; height: auto; }
+
+.card-meta { display: flex; align-items: center; width: 100%; }
+.card-meta.between { justify-content: space-between; }
+.card-meta.gap16 { gap: 16px; }
+.link { display: flex; align-items: center; gap: 6px; height: 24px; border-radius: var(--radius-link); }
+.link.filled { padding: 6px; background: var(--card-link-fill); }
+.link.padded { padding: 6px; }
+.link.grow { flex: 1 0 0; min-width: 1px; }
+.fav { flex: 0 0 auto; border-radius: var(--radius-fav); display: flex; align-items: center; justify-content: center; }
+.fav img { width: 8px; height: 8px; }
+.fav img.w6 { width: 6px; }
+.fav img.r2 { border-radius: var(--radius-fav-sm); }
+.domain { display: flex; align-items: center; gap: 2px; }
+.domain .text { display: flex; align-items: center; justify-content: center; padding-bottom: 2px; }
+.domain p { font: var(--t-domain); letter-spacing: var(--ls-domain); color: var(--acid-50); opacity: 0.8; }
+.domain .icon8 { width: 8px; height: 8px; }
+.domain .icon8 img { width: 8px; height: 8px; }
+.date { display: flex; align-items: center; justify-content: flex-end; }
+.date.padded { padding: 4px; border-radius: var(--radius-badge); }
+.date p { font: var(--t-date); letter-spacing: var(--ls-date); color: var(--acid-50); opacity: 0.4; }
+
+/* ── Bottom blur 5181:539 ──────────────────────────────────────────────── */
+.blur {
+  position: absolute; left: 265px; top: 706px;
+  width: 1175px; height: 86px;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(8, 8, 8, 0) 0%, var(--ink-500) 100%);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+
+/* ── Search 5181:540 ───────────────────────────────────────────────────── */
+.search {
+  position: absolute; left: 506px; top: 728px;
+  width: 692px; height: 48px;
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 12px;
+  border-radius: var(--radius-card);
+  background: var(--search-fill);
+  border: 1px solid var(--search-stroke);
+  box-shadow: var(--search-shadow);
+}
+.search { padding-left: 11px; padding-right: 11px; } /* 12px inset measured from the stroke's outside */
+.ask {
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  padding: 6px; border-radius: var(--radius-link);
+  background: var(--ai-fill);
+  border: 1px solid var(--ai-stroke);
+  box-shadow: var(--ai-shadow);
+}
+.ask .icon10 { width: 10px; height: 10px; }
+.ask .icon10 img { width: 10px; height: 10px; }
+.ask p { font: var(--t-ai); letter-spacing: var(--ls-ai); color: var(--ai-text); text-align: center; }
+.search-text { flex: 1 0 0; min-width: 1px; display: flex; align-items: center; padding: 4px 0; }
+.search-text p { font: var(--t-search); letter-spacing: var(--ls-search); color: var(--acid-50); opacity: 0.4; }
+.shortcut {
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  padding: 5px 6px; border-radius: var(--radius-link);
+  background: var(--control-fill);
+  border: 1px solid var(--shortcut-stroke);
+  color: var(--shortcut-text);
+}
+.shortcut .cmd { font: var(--t-shortcut); width: 10px; } /* U+2318 is not in Instrument Sans; Figma's box is 10 wide */
+.shortcut .slash { font: var(--t-shortcut-slash); }
