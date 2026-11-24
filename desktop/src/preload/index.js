@@ -35,7 +35,11 @@ const INVOKE_CHANNELS = [
   'health:sweep',
   'images:size-sweep',
   'images:ensure',
-  'media:rescan'
+  'media:rescan',
+  'instagram:open',
+  'instagram:plan',
+  'instagram:apply',
+  'instagram:close'
 ]
 
 const EVENT_CHANNELS = [
@@ -45,7 +49,8 @@ const EVENT_CHANNELS = [
   'collections:changed',
   'media:rescan-progress',
   'ui:open-capture',
-  'ui:open-settings'
+  'ui:open-settings',
+  'ui:open-instagram-import'
 ]
 
 const api = {}

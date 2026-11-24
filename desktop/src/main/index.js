@@ -12,7 +12,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { openDb, imagesDir } from './db.js'
 import { runMigrationIfNeeded } from './migrate.js'
-import { registerIpc, addBookmark, smartUrl } from './ipc.js'
+import { registerIpc, addBookmark, smartUrl, importPilot } from './ipc.js'
 import { startExtensionServer } from './httpServer.js'
 import * as db from './db.js'
 
@@ -118,6 +118,15 @@ function buildMenu() {
           label: 'New Bookmark',
           accelerator: 'Cmd+N',
           click: () => notify('ui:open-capture', { url: null })
+        },
+        { type: 'separator' },
+        {
+          label: 'Import Instagram Saves…',
+          click: () => notify('ui:open-instagram-import')
+        },
+        {
+          label: 'Import Pilot Descriptions…',
+          click: () => importPilot(mainWindow, notify)
         },
         { type: 'separator' },
         { role: 'close' }

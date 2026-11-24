@@ -16,7 +16,7 @@ export function tempDir() {
 }
 
 /** A database file as the app leaves it. version 1 = an app that predates this change. */
-export function makeDb({ version = 2, dir = tempDir() } = {}) {
+export function makeDb({ version = 3, dir = tempDir() } = {}) {
   const path = join(dir, 'staaash.db')
   mkdirSync(join(dir, 'images'), { recursive: true })
   const db = new Database(path)

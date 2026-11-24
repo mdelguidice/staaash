@@ -9,8 +9,76 @@ import { imageSize } from './imageSize.js'
 import { faviconHue } from './faviconHue.js'
 import { placeholderFor } from './placeholder.js'
 import { createHash } from 'node:crypto'
-import { join } from 'node:path'
+import { join, basename } from 'node:path'
 import { askStaaash, suggestCollection } from './ai.js'
+import { readExport, parseExport, planImport, applyImport, readPilot, applyPilot, UNFILED } from './instagram.js'
+
+// The export Mike picked, parsed once and kept while the import sheet is open.
+let pendingExport = null
+const PICKS_KEY = 'instagram_import_picks'
+
+/** Ask for the export, parse it, and return what the collection checklist shows. */
+export async function openInstagramExport(win) {
+  const { filePaths, canceled } = await dialog.showOpenDialog(win, {
+    title: 'Choose your Instagram export',
+    message: 'Pick the export .zip, its unzipped folder, or saved_posts.json.',
+    filters: [{ name: 'Instagram export', extensions: ['zip', 'json'] }],
+    properties: ['openFile', 'openDirectory']
+  })
+  if (canceled || !filePaths.length) return { ok: false }
+  try {
+    const parsed = parseExport(await readExport(filePaths[0]))
+    if (!parsed.saves.size) return { ok: false, error: 'That export has no saved posts.' }
+    pendingExport = { parsed, name: basename(filePaths[0]) }
+    let lastPicks = null
+    try {
+      lastPicks = JSON.parse(db.getSetting(PICKS_KEY) || 'null')
+    } catch {
+      /* ignore a bad stored value */
+    }
+    return {
+      ok: true,
+      name: pendingExport.name,
+      total: parsed.saves.size,
+      unfiled: parsed.unfiled.size,
+      collections: parsed.collections.map((c) => ({ key: c.key, count: c.ids.size })),
+      lastPicks
+    }
+  } catch (e) {
+    return { ok: false, error: e.message || String(e) }
+  }
+}
+
+/** Pick a saves-pilot folder and apply its descriptions and frames. Never runs anything in it. */
+export async function importPilot(win, notify) {
+  const { filePaths, canceled } = await dialog.showOpenDialog(win, {
+    title: 'Choose the saves-pilot folder',
+    message: 'The folder with pilot_results.csv and media/.',
+    properties: ['openDirectory']
+  })
+  if (canceled || !filePaths.length) return null
+  try {
+    const rows = await readPilot(filePaths[0])
+    const r = await applyPilot(db.openDb(), rows, { imagesDir: db.imagesDir() })
+    notify('bookmarks:changed')
+    const lines = [
+      `Described ${r.described} save${r.described === 1 ? '' : 's'} and added ${r.framesAdded} frame${r.framesAdded === 1 ? '' : 's'}.`
+    ]
+    if (r.alreadyDescribed) lines.push(`${r.alreadyDescribed} already had a description and were left as they were.`)
+    if (r.notInLibrary.length) {
+      lines.push(
+        `${r.notInLibrary.length} aren't in staaash yet: ${r.notInLibrary.join(', ')}. ` +
+          'Import their collection (or "Not in any collection") first, then run this again.'
+      )
+    }
+    if (r.trashed) lines.push(`${r.trashed} are in the trash and were skipped.`)
+    await dialog.showMessageBox(win, { type: 'info', message: 'Pilot descriptions imported', detail: lines.join('\n\n') })
+    return r
+  } catch (e) {
+    await dialog.showMessageBox(win, { type: 'error', message: 'Couldn’t import the pilot', detail: e.message || String(e) })
+    return null
+  }
+}
 
 /**
  * Everything a card needs to know about its preview before the image loads:
@@ -190,6 +258,30 @@ export function registerIpc(getWindow) {
   })
   handle('bookmarks:search', (query) => db.searchBookmarks(query))
   handle('bookmarks:check-duplicate', (url) => db.findDuplicate(smartUrl(url) || url))
+
+  // ── Instagram import ──
+  handle('instagram:open', () => openInstagramExport(getWindow()))
+  handle('instagram:plan', (picks) => {
+    if (!pendingExport) return { ok: false, error: 'Choose the export again.' }
+    return { ok: true, ...planImport(db.openDb(), pendingExport.parsed, clean(picks)).counts }
+  })
+  handle('instagram:apply', (picks) => {
+    if (!pendingExport) return { ok: false, error: 'Choose the export again.' }
+    const p = clean(picks)
+    const counts = applyImport(db.openDb(), pendingExport.parsed, p)
+    db.setSetting(PICKS_KEY, JSON.stringify(p))
+    pendingExport = null
+    notify('bookmarks:changed')
+    return { ok: true, ...counts }
+  })
+  handle('instagram:close', () => {
+    pendingExport = null
+    return { ok: true }
+  })
+  const clean = (picks) => ({
+    collections: Array.isArray(picks?.collections) ? picks.collections.filter((k) => typeof k === 'string' && k !== UNFILED) : [],
+    unfiled: !!picks?.unfiled
+  })
 
   // ── Metadata / health ──
   handle('meta:extract', (url) => extractMeta(url))

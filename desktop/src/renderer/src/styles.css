@@ -1995,3 +1995,55 @@ select {
   from { opacity: 0; transform: translateX(-50%) translateY(-8px); }
   to { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
+
+/* Instagram import checklist */
+.ig-source {
+  margin-top: -6px;
+  margin-bottom: 12px;
+}
+.ig-list {
+  max-height: min(52vh, 420px);
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-ui);
+  padding: 4px;
+}
+.modal label.ig-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
+}
+.modal label.ig-row:hover {
+  background: var(--surface-2);
+}
+.ig-row input {
+  accent-color: var(--text-bright);
+  width: 14px;
+  height: 14px;
+}
+.ig-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ig-count {
+  font-size: 12px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.modal label.ig-row-unfiled {
+  border-bottom: 1px solid var(--border-faint);
+  border-radius: 8px 8px 0 0;
+  margin-bottom: 4px;
+}
+.ig-plan {
+  min-height: 1.5em;
+}

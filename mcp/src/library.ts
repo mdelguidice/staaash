@@ -32,7 +32,10 @@ const WEIGHTS: Record<string, number> = {
   content: 0.5,
   tags_text: 5,
   ai_description: 3,
-  ai_text: 1.5
+  ai_text: 1.5,
+  layout_type: 3,
+  visual_style: 1.5,
+  good_for: 3
 }
 
 // Dropped only from the any-term fallback, so "the onboarding screen I saved"
@@ -153,7 +156,13 @@ export class Library {
       ai_text: r.ai_text ?? null,
       ai_model: r.ai_model ?? null,
       ai_enriched_at: r.ai_enriched_at ?? null,
+      layout_type: r.layout_type ?? null,
+      visual_style: r.visual_style ?? null,
+      good_for: r.good_for ?? null,
+      ai_confidence: r.ai_confidence ?? null,
+      instagram_post_id: r.platform === 'instagram' ? (r.external_id ?? null) : null,
       image: this.file(r.image_path, { width: r.image_w, height: r.image_h, source: r.preview_source }),
+      images: this.images(r.id),
       favicon: this.file(r.favicon_path),
       content: content ? content.slice(0, maxContentChars) : null,
       content_length: content ? content.length : 0
@@ -210,10 +219,37 @@ export class Library {
       note: trim(r.note, 300),
       summary: trim(r.summary, 200),
       ai_description: trim(r.ai_description, 300),
+      layout_type: r.layout_type ?? null,
       image_path: this.file(r.image_path)?.path ?? null,
+      image_count: this.imageCount(r.id),
       ...(r.match ? { match: r.match, matched: r.matched ?? null } : {})
     }
   }
+
+  // Every frame of a multi-image save, in order (schema v3). Frame 1 is also
+  // the card image above.
+  private images(id: string) {
+    if (!this.hasImagesTable) return []
+    const rows = this.db
+      .prepare('SELECT position, image_path, image_w, image_h, label FROM bookmark_images WHERE bookmark_id = ? ORDER BY position')
+      .all(id) as { position: number; image_path: string; image_w: number | null; image_h: number | null; label: string | null }[]
+    return rows
+      .map((f) => ({ position: f.position, ...this.file(f.image_path, { width: f.image_w, height: f.image_h, label: f.label }) }))
+      .filter((f) => 'path' in f)
+  }
+
+  private imageCount(id: string): number {
+    if (!this.hasImagesTable) return 0
+    return (this.db.prepare('SELECT count(*) AS n FROM bookmark_images WHERE bookmark_id = ?').get(id) as { n: number }).n
+  }
+
+  private get hasImagesTable(): boolean {
+    if (this._hasImages === undefined) {
+      this._hasImages = !!this.db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'bookmark_images'").get()
+    }
+    return this._hasImages
+  }
+  private _hasImages: boolean | undefined
 
   private tagNames(id: string): string[] {
     return (

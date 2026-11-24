@@ -155,7 +155,8 @@ const UPDATABLE = new Set([
   'deleted_at', 'favorited', 'source', 'hn_url', 'note', 'content', 'last_checked', 'is_dead',
   'collection_id', 'image_w', 'image_h', 'preview_source', 'focal_y',
   'ph_comp', 'ph_hue_a', 'ph_hue_b', 'ph_hue_c', 'ph_aspect',
-  'platform', 'ai_description', 'ai_text', 'ai_enriched_at', 'ai_model'
+  'platform', 'ai_description', 'ai_text', 'ai_enriched_at', 'ai_model',
+  'external_id', 'layout_type', 'visual_style', 'good_for', 'ai_confidence'
 ])
 
 export function updateBookmark(id, patch) {
@@ -209,9 +210,10 @@ export function addTagsToBookmarks(bookmarkIds, tagIds) {
 // ── Search (FTS5 with LIKE fallback) ──
 
 // bm25 weight per FTS column, in FTS_COLUMNS order (schema.js): title, domain,
-// summary, note, content, tags_text, ai_description, ai_text. Fields you wrote
+// summary, note, content, tags_text, ai_description, ai_text, layout_type,
+// visual_style, good_for. Fields you wrote
 // or chose outrank long scraped page text. mcp/src/library.ts uses the same.
-const SEARCH_WEIGHTS = '6, 1, 2, 5, 0.5, 5, 3, 1.5'
+const SEARCH_WEIGHTS = '6, 1, 2, 5, 0.5, 5, 3, 1.5, 3, 1.5, 3'
 
 // Returns matches best-first; the renderer keeps that order while a query is active.
 export function searchBookmarks(query) {
@@ -245,6 +247,7 @@ export function searchBookmarks(query) {
       .prepare(`SELECT * FROM bookmarks
                 WHERE title LIKE @q OR domain LIKE @q OR note LIKE @q OR content LIKE @q
                    OR summary LIKE @q OR tags_text LIKE @q OR ai_description LIKE @q OR ai_text LIKE @q
+                   OR layout_type LIKE @q OR visual_style LIKE @q OR good_for LIKE @q
                 ORDER BY created_at DESC LIMIT 200`)
       .all({ q: like })
       .map(hydrate)

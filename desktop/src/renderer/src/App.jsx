@@ -6,7 +6,7 @@ import ListView from './components/ListView.jsx'
 import Drawer from './components/Drawer.jsx'
 import AskBar from './components/AskBar.jsx'
 import BulkBar from './components/BulkBar.jsx'
-import { CaptureModal, SettingsModal, ShortcutsOverlay } from './components/Overlays.jsx'
+import { CaptureModal, SettingsModal, ShortcutsOverlay, InstagramImportModal } from './components/Overlays.jsx'
 import EmptyState from './components/EmptyState.jsx'
 
 const api = window.staaash
@@ -52,6 +52,7 @@ export default function App() {
   const [drawerId, setDrawerId] = useState(null)
   const [capture, setCapture] = useState(null) // {url} | null
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [igImportOpen, setIgImportOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [theme, setTheme] = useState('dark')
@@ -94,7 +95,8 @@ export default function App() {
       api.on('bookmarks:changed', reload),
       api.on('collections:changed', () => api['collections:list']().then(setCollections)),
       api.on('ui:open-capture', ({ url }) => setCapture({ url: url || '' })),
-      api.on('ui:open-settings', () => setSettingsOpen(true))
+      api.on('ui:open-settings', () => setSettingsOpen(true)),
+      api.on('ui:open-instagram-import', () => setIgImportOpen(true))
     ]
     return () => offs.forEach((off) => off())
   }, [reload])
@@ -532,6 +534,7 @@ export default function App() {
       )}
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} showToast={showToast} />}
       {shortcutsOpen && <ShortcutsOverlay onClose={() => setShortcutsOpen(false)} />}
+      {igImportOpen && <InstagramImportModal onClose={() => setIgImportOpen(false)} showToast={showToast} />}
 
       {dropActive && (
         <div className="drop-overlay">

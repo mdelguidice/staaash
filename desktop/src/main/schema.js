@@ -5,7 +5,7 @@
 // Code reads is the schema the app writes, not a hand-copied imitation of it.
 import { join } from 'node:path'
 
-export const SCHEMA_VERSION = 2
+export const SCHEMA_VERSION = 3
 
 /**
  * Bring a database up to SCHEMA_VERSION.
@@ -16,7 +16,23 @@ export const SCHEMA_VERSION = 2
  */
 export function migrateSchema(db, opts = {}) {
   migrateV1(db)
-  return migrateV2(db, opts)
+  const from = getVersion(db)
+  if (from >= SCHEMA_VERSION) return { from, to: from, backup: null }
+
+  // One snapshot before any step that rewrites existing data. VACUUM INTO
+  // writes a consistent single-file copy (WAL included) and cannot run inside
+  // a transaction, so it goes here, ahead of the steps.
+  let backup = null
+  const hasRows = db.prepare('SELECT count(*) AS n FROM bookmarks').get().n > 0
+  if (opts.backupDir && hasRows) {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+    backup = join(opts.backupDir, `staaash.db.bak-pre-v${SCHEMA_VERSION}-${stamp}`)
+    db.prepare('VACUUM INTO ?').run(backup)
+  }
+
+  if (from < 2) migrateV2(db)
+  if (from < 3) migrateV3(db)
+  return { from, to: SCHEMA_VERSION, backup }
 }
 
 // v1: everything that existed before versioning. Idempotent, runs every launch.
@@ -177,10 +193,33 @@ const V2_COLUMNS = [
   ['ai_model', 'TEXT']
 ]
 
-// Order matters: bm25() weights in consumers are positional against this list.
-export const FTS_COLUMNS = [
+const V2_FTS_COLUMNS = [
   'title', 'domain', 'summary', 'note', 'content', 'tags_text', 'ai_description', 'ai_text'
 ]
+
+// v3: what a vision pass says about the layout. external_id is the source
+// platform's own id for the item (Instagram's post id), the import match key.
+// ai_confidence is the describer's own high / medium / low; medium labels were
+// the ones Mike disagreed with in the pilot, so the app can flag them.
+const V3_COLUMNS = [
+  ['external_id', 'TEXT'],
+  ['layout_type', 'TEXT'],
+  ['visual_style', 'TEXT'],
+  ['good_for', 'TEXT'],
+  ['ai_confidence', 'TEXT']
+]
+
+// Order matters: bm25() weights in consumers are positional against this list.
+// New columns go on the end so existing weight lists stay aligned.
+export const FTS_COLUMNS = [...V2_FTS_COLUMNS, 'layout_type', 'visual_style', 'good_for']
+
+// Instagram post id from any of its URL forms. /p/, /reel/ and /tv/ share one
+// id space, so the same post saved two ways matches.
+export function instagramPostId(url) {
+  if (typeof url !== 'string') return null
+  const m = url.match(/^https?:\/\/(?:www\.|m\.)?(?:instagram\.com|instagr\.am)\/(?:[A-Za-z0-9_.]+\/)?(?:p|reels?|tv)\/([A-Za-z0-9_-]+)/i)
+  return m ? m[1] : null
+}
 
 export function platformFor(url) {
   try {
@@ -197,23 +236,7 @@ function getVersion(db) {
   return row ? Number(row.value) || 1 : 1
 }
 
-function migrateV2(db, { backupDir } = {}) {
-  const from = getVersion(db)
-  if (from >= 2) return { from, to: from, backup: null }
-
-  // Snapshot first. VACUUM INTO writes a consistent single-file copy (WAL
-  // contents included) and cannot run inside a transaction, so it goes here.
-  let backup = null
-  const hasRows = db.prepare('SELECT count(*) AS n FROM bookmarks').get().n > 0
-  if (backupDir && hasRows) {
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-')
-    backup = join(backupDir, `staaash.db.bak-pre-v2-${stamp}`)
-    db.prepare('VACUUM INTO ?').run(backup)
-  }
-
-  const fts = FTS_COLUMNS.join(', ')
-  const newVals = FTS_COLUMNS.map((c) => `new.${c}`).join(', ')
-  const oldVals = FTS_COLUMNS.map((c) => `old.${c}`).join(', ')
+function migrateV2(db) {
   const tagsTextFor = (idExpr) => `(SELECT group_concat(t.name, ' ') FROM bookmark_tags bt
       JOIN tags t ON t.id = bt.tag_id WHERE bt.bookmark_id = ${idExpr})`
 
@@ -232,31 +255,9 @@ function migrateV2(db, { backupDir } = {}) {
 
     // Rebuild the index with the wider column set. Trigger names are kept so
     // v1's CREATE ... IF NOT EXISTS stays a no-op on later launches.
+    rebuildFts(db, V2_FTS_COLUMNS)
+
     db.exec(`
-      DROP TRIGGER IF EXISTS bookmarks_ai;
-      DROP TRIGGER IF EXISTS bookmarks_ad;
-      DROP TRIGGER IF EXISTS bookmarks_au;
-      DROP TABLE IF EXISTS bookmarks_fts;
-
-      CREATE VIRTUAL TABLE bookmarks_fts USING fts5(
-        ${fts},
-        content='bookmarks', content_rowid='rowid',
-        tokenize='porter unicode61'
-      );
-
-      CREATE TRIGGER bookmarks_ai AFTER INSERT ON bookmarks BEGIN
-        INSERT INTO bookmarks_fts(rowid, ${fts}) VALUES (new.rowid, ${newVals});
-      END;
-      CREATE TRIGGER bookmarks_ad AFTER DELETE ON bookmarks BEGIN
-        INSERT INTO bookmarks_fts(bookmarks_fts, rowid, ${fts}) VALUES ('delete', old.rowid, ${oldVals});
-      END;
-      CREATE TRIGGER bookmarks_au AFTER UPDATE ON bookmarks BEGIN
-        INSERT INTO bookmarks_fts(bookmarks_fts, rowid, ${fts}) VALUES ('delete', old.rowid, ${oldVals});
-        INSERT INTO bookmarks_fts(rowid, ${fts}) VALUES (new.rowid, ${newVals});
-      END;
-
-      INSERT INTO bookmarks_fts(bookmarks_fts) VALUES ('rebuild');
-
       -- tags_text upkeep. FK cascades fire these too (tag deleted -> its
       -- bookmark_tags rows deleted -> each bookmark's tags_text recomputed).
       CREATE TRIGGER IF NOT EXISTS bookmark_tags_ai AFTER INSERT ON bookmark_tags BEGIN
@@ -271,10 +272,80 @@ function migrateV2(db, { backupDir } = {}) {
       END;
     `)
 
-    db.prepare(
-      "INSERT INTO settings (key, value) VALUES ('schema_version', '2') ON CONFLICT(key) DO UPDATE SET value = excluded.value"
-    ).run()
+    setVersion(db, 2)
   })()
+}
 
-  return { from, to: 2, backup }
+function setVersion(db, v) {
+  db.prepare(
+    "INSERT INTO settings (key, value) VALUES ('schema_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+  ).run(String(v))
+}
+
+function rebuildFts(db, columns) {
+  const fts = columns.join(', ')
+  const newVals = columns.map((c) => `new.${c}`).join(', ')
+  const oldVals = columns.map((c) => `old.${c}`).join(', ')
+  db.exec(`
+    DROP TRIGGER IF EXISTS bookmarks_ai;
+    DROP TRIGGER IF EXISTS bookmarks_ad;
+    DROP TRIGGER IF EXISTS bookmarks_au;
+    DROP TABLE IF EXISTS bookmarks_fts;
+
+    CREATE VIRTUAL TABLE bookmarks_fts USING fts5(
+      ${fts},
+      content='bookmarks', content_rowid='rowid',
+      tokenize='porter unicode61'
+    );
+
+    CREATE TRIGGER bookmarks_ai AFTER INSERT ON bookmarks BEGIN
+      INSERT INTO bookmarks_fts(rowid, ${fts}) VALUES (new.rowid, ${newVals});
+    END;
+    CREATE TRIGGER bookmarks_ad AFTER DELETE ON bookmarks BEGIN
+      INSERT INTO bookmarks_fts(bookmarks_fts, rowid, ${fts}) VALUES ('delete', old.rowid, ${oldVals});
+    END;
+    CREATE TRIGGER bookmarks_au AFTER UPDATE ON bookmarks BEGIN
+      INSERT INTO bookmarks_fts(bookmarks_fts, rowid, ${fts}) VALUES ('delete', old.rowid, ${oldVals});
+      INSERT INTO bookmarks_fts(rowid, ${fts}) VALUES (new.rowid, ${newVals});
+    END;
+
+    INSERT INTO bookmarks_fts(bookmarks_fts) VALUES ('rebuild');
+  `)
+}
+
+// ── v3: Instagram import and vision fields ──
+//
+// bookmark_images holds every frame of a multi-image save in order. The card
+// keeps using bookmarks.image_path (frame 1); this table is for the drawer and
+// for Claude Code, which gets all of them through the MCP server.
+function migrateV3(db) {
+  db.transaction(() => {
+    const existing = new Set(db.prepare('PRAGMA table_info(bookmarks)').all().map((c) => c.name))
+    for (const [name, type] of V3_COLUMNS) {
+      if (!existing.has(name)) db.exec(`ALTER TABLE bookmarks ADD COLUMN ${name} ${type}`)
+    }
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_bookmarks_external ON bookmarks(external_id);
+      CREATE TABLE IF NOT EXISTS bookmark_images (
+        bookmark_id TEXT NOT NULL REFERENCES bookmarks(id) ON DELETE CASCADE,
+        position INTEGER NOT NULL,
+        image_path TEXT NOT NULL,
+        image_w INTEGER,
+        image_h INTEGER,
+        label TEXT,
+        PRIMARY KEY (bookmark_id, position)
+      );
+    `)
+
+    // Instagram saves already in the library get their post id, so a later
+    // import matches them instead of adding a second copy.
+    const setExt = db.prepare('UPDATE bookmarks SET external_id = ? WHERE id = ?')
+    for (const r of db.prepare("SELECT id, url FROM bookmarks WHERE platform = 'instagram' AND external_id IS NULL").all()) {
+      const pid = instagramPostId(r.url)
+      if (pid) setExt.run(pid, r.id)
+    }
+
+    rebuildFts(db, FTS_COLUMNS)
+    setVersion(db, 3)
+  })()
 }

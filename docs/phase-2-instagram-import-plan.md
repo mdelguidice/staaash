@@ -1,6 +1,6 @@
 # Phase 2 plan: Instagram import
 
-Status: draft, awaiting Mike's approval. No code until approved.
+Status: approved 2026-11-24 and built. Waiting on Mike's test on his Mac.
 
 Decided 2026-11-24: Instagram collections become tags. The import brings in only the collections Mike picks.
 
@@ -60,3 +60,17 @@ Pilot status: passed (2026-11-24). Fetch 20/20 with no warnings. Mike agreed wit
 - Cards have no image until frames exist. They get the gradient placeholder. The first import is smaller now: about 240 for the design-type collections (estimate).
 - If Mike removes an imported tag and later re-imports that same collection, the tag comes back. Fix only if it bites: remember removed import tags.
 - Searching 1,000+ caption hashtags may crowd ranking. Mitigation: index the caption in `summary`, which already ranks below `title`.
+
+## As built
+
+- `desktop/src/main/instagram.js`: export reader (zip via the system `unzip`, folder, or `saved_posts.json`), parser, plan/apply, pilot reader/apply. No Electron imports.
+- Schema v3 (`schema.js`): `external_id`, `layout_type`, `visual_style`, `good_for`, `ai_confidence`, `bookmark_images`. One backup before any migration step. Existing Instagram saves get their post id backfilled.
+- File › Import Instagram Saves…: picker, then the checklist with a live dry-run line. Picks are remembered in settings (`instagram_import_picks`).
+- File › Import Pilot Descriptions…: pick the saves-pilot folder. Only reads `pilot_results.csv` and `media/`. Saves not yet in the library are listed, not created.
+- MCP: `get_save` returns `images` (every frame) and the vision fields; search results carry `layout_type` and `image_count`.
+- Placeholders are seeded by creator, so imported cards aren't one repeated gradient.
+- Tests: `cd mcp && npm test` (27, including 13 for the import).
+
+Found while building: 18 of the 20 pilot saves are in no Instagram collection. Mike's design saves mostly live unfiled, so "Not in any collection" sits at the top of the checklist. Without it, the pilot import can describe only 2 saves.
+
+Dry run on the real export (temp database): AI tools, homescreen, tech, PC building, drawing, motion plus unfiled = 549 new saves; a second run changed nothing; the pilot then described 19 and added 193 frames (the 20th is in Food & recipes).

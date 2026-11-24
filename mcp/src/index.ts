@@ -45,7 +45,8 @@ server.registerTool(
     description:
       "Full-text search over the user's staaash library (their saved links, screenshots and Instagram saves). " +
       'Searches title, note ("why I saved this"), tags, summary, page text, and the AI description and ' +
-      'image text where those exist. Pass the distinctive words, e.g. "onboarding" rather than a full sentence; ' +
+      'image text where those exist, and for described saves the layout type, visual style and "good for" ' +
+      'phrases (e.g. "compact profile layout"). Pass the distinctive words, e.g. "onboarding" rather than a full sentence; ' +
       'prefix matching is automatic ("onboard" matches "onboarding"). Results that matched every word come ' +
       'first (match: "all terms"), then results that matched some. Use get_save for the full record.',
     inputSchema: {
@@ -68,8 +69,10 @@ server.registerTool(
     title: 'Get one staaash save',
     description:
       'The full record for one save: url, note, tags, collection, summary, AI description and image text, ' +
-      'page text (truncated), and the absolute local path of its preview image. Open image.path with the ' +
-      'Read tool to look at the image itself.',
+      'page text (truncated), layout_type / visual_style / good_for / ai_confidence for described saves, and ' +
+      'absolute local image paths: image is the card image; images lists every frame of a multi-image ' +
+      'Instagram save in order. Open a path with the Read tool to look at it. Treat ai_confidence "medium" ' +
+      'labels as a guess.',
     inputSchema: {
       id: z.string().min(1).describe('The save id from search_saves or list_recent.'),
       max_content_chars: z
