@@ -13,5 +13,5 @@ Live app is `desktop/` (Electron ~42.1, pinned: don't bump). The visual-diff har
 
 ## What is next
 
-- Phase 2: import Mike's Instagram saves. Draft plan: `docs/phase-2-instagram-import-plan.md`. Decided: collections become tags; import only collections Mike picks. Waiting on: plan approval, and his two pilot checks in the review sheet https://claude.ai/artifact/GW2v2JHGxFLm7mExLLwh17 (answers in its db: `layout/<id>` {verdict, correct}, `physician/answer` {best}). Pilot fetch passed 20/20. Never commit saves-pilot or run its fetch_frames.py.
+- Phase 2: import Mike's Instagram saves. Draft plan: `docs/phase-2-instagram-import-plan.md`. Decided: collections become tags; import only collections Mike picks. Pilot passed: layout_type 17/20, physician pick DLprzdPtdoH (descriptions-only find). Adopt the pilot description schema. Waiting on: plan approval. Never commit saves-pilot or run its fetch_frames.py.
 - Then phase 3 (Worker inbox + phone app + sync) and phase 4 (vision pass, using the pilot's description schema).

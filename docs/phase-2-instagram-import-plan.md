@@ -38,7 +38,7 @@ Matches on post ID and fills empty fields only. It adds tags for checked collect
 
 ## Pilot fields (only if the pilot passed)
 
-Pilot status (saves-pilot.zip, 2026-11-23): fetch passed, 20/20 with no Instagram warnings. Mike's two checks are not recorded anywhere in the zip: layout_type agreement ≥16/20, and a physician-card pick beating the caption picks in his judgment. These fields stay out until he does both.
+Pilot status: passed (2026-11-24). Fetch 20/20 with no warnings. Mike agreed with layout_type on 17/20 (bar 16). His physician-card pick was `DLprzdPtdoH`, which only the on-screen descriptions found. The 3 misses were all medium-confidence videos where the model's labels were close but the main label was wrong: website scroll vs hero vs motion demo. Phase 4 should flag medium-confidence labels for review.
 
 - `on_screen` → `ai_description`.
 - `layout_type`, `visual_style`, `good_for`, `confidence` → new columns, added to the search index.
