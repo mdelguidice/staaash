@@ -19,12 +19,14 @@ Status: draft, awaiting Mike's approval. No code until approved.
 | timestamp | `created_at` (saved date, not import date) |
 | username + caption line 1 | `title` = "creator · caption first line" |
 | caption (decoded) | `summary` |
-| collection name | see decision 2 |
+| collection name | tags (recommended) or a field: open decision |
 | — | `source = 'instagram-export'`, `platform = 'instagram'` |
 
 Re-running the import: matches on post ID, fills empty fields only, never touches `note`, tags, favorites, archive or delete state. A save Mike deleted in staaash stays deleted.
 
-## Pilot fields (only if the pilot passed, see decision 3)
+## Pilot fields (only if the pilot passed)
+
+Pilot status (saves-pilot.zip, 2026-11-23): fetch passed, 20/20 with no Instagram warnings. Mike's two checks are not recorded anywhere in the zip: layout_type agreement ≥16/20, and a physician-card pick beating the caption picks in his judgment. These fields stay out until he does both.
 
 - `on_screen` → `ai_description`.
 - `layout_type`, `visual_style`, `good_for`, `confidence` → new columns, added to the search index.

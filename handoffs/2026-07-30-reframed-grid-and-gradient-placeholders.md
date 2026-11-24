@@ -1,5 +1,7 @@
 # Reframed grid mock, and gradient placeholders for cards with no image
 
+> **Removed 2026-11-24:** the visual-diff harness (`tools/visual-diff/`, `visual-diff/`) is gone. Ignore any step here that runs, calibrates or trusts it. Check UI changes in the running app instead.
+
 **Date:** 2026-07-30
 **Status:** Previews only. **No app, layout or harness code was changed.** The
 visual-diff harness stays in maintenance mode.

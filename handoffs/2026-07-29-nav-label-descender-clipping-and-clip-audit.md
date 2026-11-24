@@ -1,5 +1,7 @@
 # Sidebar nav labels were clipping their own descenders — fix + harness guard
 
+> **Removed 2026-11-24:** the visual-diff harness (`tools/visual-diff/`, `visual-diff/`) is gone. Ignore any step here that runs, calibrates or trusts it. Check UI changes in the running app instead.
+
 **Date:** 2026-07-29
 **Branch:** `main`
 **Commit:** `eeb4830` — *Stop the sidebar clipping the descenders off its own nav labels*

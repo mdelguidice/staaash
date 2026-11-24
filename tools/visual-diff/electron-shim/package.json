@@ -1,7 +1,0 @@
-{
-  "name": "staaash-visual-diff-shim",
-  "version": "1.0.0",
-  "private": true,
-  "type": "module",
-  "main": "main.mjs"
-}

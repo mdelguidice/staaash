@@ -1,5 +1,7 @@
 # Design parity: sidebar gaps closed, cards given their image's shape
 
+> **Removed 2026-11-24:** the visual-diff harness (`tools/visual-diff/`, `visual-diff/`) is gone. Ignore any step here that runs, calibrates or trusts it. Check UI changes in the running app instead.
+
 **Date:** 2026-07-29
 **Branch:** `design-parity`, fast-forward merged into `main`
 **Commits:** `59bfbe9` (sidebar) and `64381e2` (card aspect)

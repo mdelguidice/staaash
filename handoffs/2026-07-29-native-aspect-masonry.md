@@ -1,5 +1,7 @@
 # Native-aspect masonry: CARD_ASPECTS deleted, letterbox removed, clamp at 1.5×
 
+> **Removed 2026-11-24:** the visual-diff harness (`tools/visual-diff/`, `visual-diff/`) is gone. Ignore any step here that runs, calibrates or trusts it. Check UI changes in the running app instead.
+
 **Date:** 2026-07-29
 **Branch:** `main`
 **Commit:** `ef4f948` — *Give cards their image's real proportions, clamped only at the tall end*

@@ -25,7 +25,7 @@ const REPO = '/Users/mike/staaash'
 const OUT = '/private/tmp/claude-501/-Users-mike-staaash/fef7c9b1-8d0d-4fd9-be77-91c9cc421f0b/scratchpad'
 const DB = `${OUT}/lib2/staaash.db`
 const IMG = `${process.env.HOME}/Library/Application Support/staaash/images`
-const sharp = (await import(`${REPO}/tools/visual-diff/node_modules/sharp/dist/index.cjs`)).default
+const sharp = (await import(`${REPO}/desktop/node_modules/sharp/dist/index.cjs`)).default
 
 // A card is 365 CSS px wide; the app forces devicePixelRatio 2.
 const TARGET_DEVICE_W = 730

@@ -1,5 +1,7 @@
 # Content-aware reframing — phase 2: fixed aspect set, bbox selects and centres
 
+> **Removed 2026-11-24:** the visual-diff harness (`tools/visual-diff/`, `visual-diff/`) is gone. Ignore any step here that runs, calibrates or trusts it. Check UI changes in the running app instead.
+
 **Date:** 2026-07-30
 **Status:** Measurement only. **No app, layout or harness code was changed.** The
 visual-diff harness stays in maintenance mode and was not developed.

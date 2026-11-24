@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 const OUT = '/private/tmp/claude-501/-Users-mike-staaash/fef7c9b1-8d0d-4fd9-be77-91c9cc421f0b/scratchpad'
 const IMG = `${process.env.HOME}/Library/Application Support/staaash/images`
-const sharp = (await import('/Users/mike/staaash/tools/visual-diff/node_modules/sharp/dist/index.cjs')).default
+const sharp = (await import('/Users/mike/staaash/desktop/node_modules/sharp/dist/index.cjs')).default
 
 const rows = JSON.parse(execFileSync('sqlite3', [`${OUT}/lib2/staaash.db`, '-json',
   `SELECT id, domain, url, favicon_path FROM bookmarks

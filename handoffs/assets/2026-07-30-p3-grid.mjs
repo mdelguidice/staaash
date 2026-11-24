@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 const OUT = '/private/tmp/claude-501/-Users-mike-staaash/fef7c9b1-8d0d-4fd9-be77-91c9cc421f0b/scratchpad'
 const IMG = `${process.env.HOME}/Library/Application Support/staaash/images`
-const sharp = (await import('/Users/mike/staaash/tools/visual-diff/node_modules/sharp/dist/index.cjs')).default
+const sharp = (await import('/Users/mike/staaash/desktop/node_modules/sharp/dist/index.cjs')).default
 
 export const S = 2                    // device pixel ratio
 export const COL_W = 365.33

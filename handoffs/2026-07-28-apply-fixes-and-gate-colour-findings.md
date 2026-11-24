@@ -1,5 +1,7 @@
 # Handoff — first app fixes, extended style spec, corroboration-gated colour check
 
+> **Removed 2026-11-24:** the visual-diff harness (`tools/visual-diff/`, `visual-diff/`) is gone. Ignore any step here that runs, calibrates or trusts it. Check UI changes in the running app instead.
+
 **Date:** 2026-07-28 · **Repo:** `/Users/mike/staaash` · **Branch:** `design-tweaks` (local only)
 
 Follows [`2026-07-28-figma-layer-properties.md`](2026-07-28-figma-layer-properties.md).
