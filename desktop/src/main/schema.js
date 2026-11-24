@@ -1,0 +1,280 @@
+// Schema and migrations for staaash.db.
+//
+// Kept free of any Electron import on purpose: the MCP server's tests (mcp/)
+// build their fixture databases with this exact code, so the schema Claude
+// Code reads is the schema the app writes, not a hand-copied imitation of it.
+import { join } from 'node:path'
+
+export const SCHEMA_VERSION = 2
+
+/**
+ * Bring a database up to SCHEMA_VERSION.
+ *
+ * opts.backupDir — where to write a snapshot before a migration that rewrites
+ * existing data. Omit it and no backup is taken (tests, fresh databases).
+ * Returns { from, to, backup } so the caller can log what happened.
+ */
+export function migrateSchema(db, opts = {}) {
+  migrateV1(db)
+  return migrateV2(db, opts)
+}
+
+// v1: everything that existed before versioning. Idempotent, runs every launch.
+// Exported so tests can build a database exactly as an un-upgraded app left it.
+export function migrateV1(db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS bookmarks (
+      id TEXT PRIMARY KEY,
+      url TEXT NOT NULL,
+      normalized_url TEXT NOT NULL,
+      title TEXT,
+      domain TEXT,
+      summary TEXT,
+      image_url TEXT,
+      image_path TEXT,
+      created_at TEXT NOT NULL,
+      read_at TEXT,
+      archived_at TEXT,
+      deleted_at TEXT,
+      favorited INTEGER NOT NULL DEFAULT 0,
+      source TEXT,
+      hn_url TEXT,
+      note TEXT,
+      content TEXT,
+      last_checked TEXT,
+      is_dead INTEGER NOT NULL DEFAULT 0,
+      collection_id TEXT REFERENCES collections(id) ON DELETE SET NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_bookmarks_normalized ON bookmarks(normalized_url);
+    CREATE INDEX IF NOT EXISTS idx_bookmarks_created ON bookmarks(created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS tags (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE
+    );
+    CREATE TABLE IF NOT EXISTS bookmark_tags (
+      bookmark_id TEXT NOT NULL REFERENCES bookmarks(id) ON DELETE CASCADE,
+      tag_id TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+      PRIMARY KEY (bookmark_id, tag_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS collections (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      color TEXT,
+      position INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    );
+
+    CREATE VIRTUAL TABLE IF NOT EXISTS bookmarks_fts USING fts5(
+      title, domain, note, content,
+      content='bookmarks', content_rowid='rowid',
+      tokenize='porter unicode61'
+    );
+
+    CREATE TRIGGER IF NOT EXISTS bookmarks_ai AFTER INSERT ON bookmarks BEGIN
+      INSERT INTO bookmarks_fts(rowid, title, domain, note, content)
+      VALUES (new.rowid, new.title, new.domain, new.note, new.content);
+    END;
+    CREATE TRIGGER IF NOT EXISTS bookmarks_ad AFTER DELETE ON bookmarks BEGIN
+      INSERT INTO bookmarks_fts(bookmarks_fts, rowid, title, domain, note, content)
+      VALUES ('delete', old.rowid, old.title, old.domain, old.note, old.content);
+    END;
+    CREATE TRIGGER IF NOT EXISTS bookmarks_au AFTER UPDATE ON bookmarks BEGIN
+      INSERT INTO bookmarks_fts(bookmarks_fts, rowid, title, domain, note, content)
+      VALUES ('delete', old.rowid, old.title, old.domain, old.note, old.content);
+      INSERT INTO bookmarks_fts(rowid, title, domain, note, content)
+      VALUES (new.rowid, new.title, new.domain, new.note, new.content);
+    END;
+  `)
+
+  // Additive column migrations for databases created before these fields existed
+  const cols = db.prepare('PRAGMA table_info(bookmarks)').all().map((c) => c.name)
+  if (!cols.includes('favicon_path')) {
+    db.exec('ALTER TABLE bookmarks ADD COLUMN favicon_path TEXT')
+  }
+  // Intrinsic size of the cached preview. The gallery gives each card its
+  // image's own shape, and the masonry places every card before any of them
+  // paint — so this has to be readable from the record, not from the <img>.
+  // Null means "not measured yet"; cardShape falls back until it is.
+  if (!cols.includes('image_w')) {
+    db.exec('ALTER TABLE bookmarks ADD COLUMN image_w INTEGER')
+  }
+  if (!cols.includes('image_h')) {
+    db.exec('ALTER TABLE bookmarks ADD COLUMN image_h INTEGER')
+  }
+  // Where the preview came from, and where to hold the image when a card has to
+  // crop it. Only cards clamped at the tall end crop at all (see cardShape in
+  // lib/format.js), so these matter for a small minority — but which minority is
+  // not knowable at render time without them.
+  //
+  // preview_source: 'og' | 'screenshot' | 'unknown' | null, where null means
+  // "not examined yet" and 'unknown' means "examined, unrecoverable". The
+  // distinction is what lets the backfill sweep converge instead of re-checking
+  // the same rows every launch.
+  //
+  // Unrecoverable is a real state, not a defensive branch: migrate.js nulls an
+  // image_url that was an internal /api/cached/<hash> reference, which destroys
+  // the only evidence of where the file came from. 9 rows of 244 in a real
+  // library are in it. The cheap heuristic (image_url IS NULL implies
+  // screenshot) labels every one of them a screenshot, and every one is an
+  // og:image — which is why this is a recorded value rather than an inference.
+  //
+  // focal_y: 0..1, the vertical point to keep when cropping. Null means "use the
+  // default for preview_source".
+  if (!cols.includes('preview_source')) {
+    db.exec('ALTER TABLE bookmarks ADD COLUMN preview_source TEXT')
+  }
+  if (!cols.includes('focal_y')) {
+    db.exec('ALTER TABLE bookmarks ADD COLUMN focal_y REAL')
+  }
+  // Gradient placeholder for a bookmark with no preview image. Every value is a
+  // pure function of the domain (see main/placeholder.js) so it could in
+  // principle be recomputed on demand — it is stored so that changing the
+  // generator later cannot reshuffle a library that already exists, and so the
+  // renderer needs no hashing on the layout path.
+  //
+  // ph_comp   which of the ten compositions
+  // ph_hue_a/b/c  the three hue stops, degrees. Saturation and lightness are
+  //           NOT stored: they come from the house palette in CSS, so the whole
+  //           library's register can be retuned without a migration.
+  // ph_aspect the card's shape, from the same set the reframing work used
+  if (!cols.includes('ph_comp')) db.exec('ALTER TABLE bookmarks ADD COLUMN ph_comp INTEGER')
+  if (!cols.includes('ph_hue_a')) db.exec('ALTER TABLE bookmarks ADD COLUMN ph_hue_a REAL')
+  if (!cols.includes('ph_hue_b')) db.exec('ALTER TABLE bookmarks ADD COLUMN ph_hue_b REAL')
+  if (!cols.includes('ph_hue_c')) db.exec('ALTER TABLE bookmarks ADD COLUMN ph_hue_c REAL')
+  if (!cols.includes('ph_aspect')) db.exec('ALTER TABLE bookmarks ADD COLUMN ph_aspect REAL')
+}
+
+// ── v2: search over everything a save says about itself ──
+//
+// v1's full-text index covered title, domain, note and page content only. A
+// save's tags, its OG summary and (from phase 4) the AI description and the text
+// read out of its image were all invisible to search. v2 adds the columns and
+// rebuilds the index over all of them.
+//
+// platform    where the thing lives: 'instagram' | 'web'. Distinct from
+//             `source`, which is how it got here ('app', 'extension', 'import',
+//             later 'phone'). An Instagram reel saved from the phone is
+//             platform=instagram, source=phone.
+// tags_text   the item's tag names, space-separated. Derived, never written by
+//             app code: triggers on bookmark_tags and tags keep it current, so
+//             every path that touches tags (bulk tag, rename, delete, cascade)
+//             stays correct without each one remembering to.
+// ai_*        written once by the phase-4 vision pass. ai_model records which
+//             model wrote it so a weak batch can be redone selectively.
+const V2_COLUMNS = [
+  ['platform', 'TEXT'],
+  ['tags_text', 'TEXT'],
+  ['ai_description', 'TEXT'],
+  ['ai_text', 'TEXT'],
+  ['ai_enriched_at', 'TEXT'],
+  ['ai_model', 'TEXT']
+]
+
+// Order matters: bm25() weights in consumers are positional against this list.
+export const FTS_COLUMNS = [
+  'title', 'domain', 'summary', 'note', 'content', 'tags_text', 'ai_description', 'ai_text'
+]
+
+export function platformFor(url) {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, '').toLowerCase()
+    if (host === 'instagram.com' || host.endsWith('.instagram.com') || host === 'instagr.am') return 'instagram'
+    return 'web'
+  } catch {
+    return null
+  }
+}
+
+function getVersion(db) {
+  const row = db.prepare("SELECT value FROM settings WHERE key = 'schema_version'").get()
+  return row ? Number(row.value) || 1 : 1
+}
+
+function migrateV2(db, { backupDir } = {}) {
+  const from = getVersion(db)
+  if (from >= 2) return { from, to: from, backup: null }
+
+  // Snapshot first. VACUUM INTO writes a consistent single-file copy (WAL
+  // contents included) and cannot run inside a transaction, so it goes here.
+  let backup = null
+  const hasRows = db.prepare('SELECT count(*) AS n FROM bookmarks').get().n > 0
+  if (backupDir && hasRows) {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+    backup = join(backupDir, `staaash.db.bak-pre-v2-${stamp}`)
+    db.prepare('VACUUM INTO ?').run(backup)
+  }
+
+  const fts = FTS_COLUMNS.join(', ')
+  const newVals = FTS_COLUMNS.map((c) => `new.${c}`).join(', ')
+  const oldVals = FTS_COLUMNS.map((c) => `old.${c}`).join(', ')
+  const tagsTextFor = (idExpr) => `(SELECT group_concat(t.name, ' ') FROM bookmark_tags bt
+      JOIN tags t ON t.id = bt.tag_id WHERE bt.bookmark_id = ${idExpr})`
+
+  db.transaction(() => {
+    const existing = new Set(db.prepare('PRAGMA table_info(bookmarks)').all().map((c) => c.name))
+    for (const [name, type] of V2_COLUMNS) {
+      if (!existing.has(name)) db.exec(`ALTER TABLE bookmarks ADD COLUMN ${name} ${type}`)
+    }
+
+    // Backfill the derived columns before the index is rebuilt over them.
+    const setPlatform = db.prepare('UPDATE bookmarks SET platform = ? WHERE id = ?')
+    for (const r of db.prepare('SELECT id, url FROM bookmarks WHERE platform IS NULL').all()) {
+      setPlatform.run(platformFor(r.url), r.id)
+    }
+    db.exec(`UPDATE bookmarks SET tags_text = ${tagsTextFor('bookmarks.id')}`)
+
+    // Rebuild the index with the wider column set. Trigger names are kept so
+    // v1's CREATE ... IF NOT EXISTS stays a no-op on later launches.
+    db.exec(`
+      DROP TRIGGER IF EXISTS bookmarks_ai;
+      DROP TRIGGER IF EXISTS bookmarks_ad;
+      DROP TRIGGER IF EXISTS bookmarks_au;
+      DROP TABLE IF EXISTS bookmarks_fts;
+
+      CREATE VIRTUAL TABLE bookmarks_fts USING fts5(
+        ${fts},
+        content='bookmarks', content_rowid='rowid',
+        tokenize='porter unicode61'
+      );
+
+      CREATE TRIGGER bookmarks_ai AFTER INSERT ON bookmarks BEGIN
+        INSERT INTO bookmarks_fts(rowid, ${fts}) VALUES (new.rowid, ${newVals});
+      END;
+      CREATE TRIGGER bookmarks_ad AFTER DELETE ON bookmarks BEGIN
+        INSERT INTO bookmarks_fts(bookmarks_fts, rowid, ${fts}) VALUES ('delete', old.rowid, ${oldVals});
+      END;
+      CREATE TRIGGER bookmarks_au AFTER UPDATE ON bookmarks BEGIN
+        INSERT INTO bookmarks_fts(bookmarks_fts, rowid, ${fts}) VALUES ('delete', old.rowid, ${oldVals});
+        INSERT INTO bookmarks_fts(rowid, ${fts}) VALUES (new.rowid, ${newVals});
+      END;
+
+      INSERT INTO bookmarks_fts(bookmarks_fts) VALUES ('rebuild');
+
+      -- tags_text upkeep. FK cascades fire these too (tag deleted -> its
+      -- bookmark_tags rows deleted -> each bookmark's tags_text recomputed).
+      CREATE TRIGGER IF NOT EXISTS bookmark_tags_ai AFTER INSERT ON bookmark_tags BEGIN
+        UPDATE bookmarks SET tags_text = ${tagsTextFor('new.bookmark_id')} WHERE id = new.bookmark_id;
+      END;
+      CREATE TRIGGER IF NOT EXISTS bookmark_tags_ad AFTER DELETE ON bookmark_tags BEGIN
+        UPDATE bookmarks SET tags_text = ${tagsTextFor('old.bookmark_id')} WHERE id = old.bookmark_id;
+      END;
+      CREATE TRIGGER IF NOT EXISTS tags_au_name AFTER UPDATE OF name ON tags BEGIN
+        UPDATE bookmarks SET tags_text = ${tagsTextFor('bookmarks.id')}
+        WHERE id IN (SELECT bookmark_id FROM bookmark_tags WHERE tag_id = new.id);
+      END;
+    `)
+
+    db.prepare(
+      "INSERT INTO settings (key, value) VALUES ('schema_version', '2') ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+    ).run()
+  })()
+
+  return { from, to: 2, backup }
+}

@@ -5,6 +5,7 @@ import { app } from 'electron'
 import { join } from 'node:path'
 import { mkdirSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
+import { migrateSchema, platformFor } from './schema.js'
 
 let db = null
 
@@ -23,139 +24,13 @@ export function openDb() {
   db = new Database(join(dataDir(), 'staaash.db'))
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
-  migrateSchema(db)
+  const m = migrateSchema(db, { backupDir: dataDir() })
+  if (m.from !== m.to) {
+    console.log(`[staaash] schema v${m.from} -> v${m.to}` + (m.backup ? ` (backup: ${m.backup})` : ''))
+  }
   return db
 }
 
-function migrateSchema(db) {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS bookmarks (
-      id TEXT PRIMARY KEY,
-      url TEXT NOT NULL,
-      normalized_url TEXT NOT NULL,
-      title TEXT,
-      domain TEXT,
-      summary TEXT,
-      image_url TEXT,
-      image_path TEXT,
-      created_at TEXT NOT NULL,
-      read_at TEXT,
-      archived_at TEXT,
-      deleted_at TEXT,
-      favorited INTEGER NOT NULL DEFAULT 0,
-      source TEXT,
-      hn_url TEXT,
-      note TEXT,
-      content TEXT,
-      last_checked TEXT,
-      is_dead INTEGER NOT NULL DEFAULT 0,
-      collection_id TEXT REFERENCES collections(id) ON DELETE SET NULL
-    );
-    CREATE INDEX IF NOT EXISTS idx_bookmarks_normalized ON bookmarks(normalized_url);
-    CREATE INDEX IF NOT EXISTS idx_bookmarks_created ON bookmarks(created_at DESC);
-
-    CREATE TABLE IF NOT EXISTS tags (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL UNIQUE
-    );
-    CREATE TABLE IF NOT EXISTS bookmark_tags (
-      bookmark_id TEXT NOT NULL REFERENCES bookmarks(id) ON DELETE CASCADE,
-      tag_id TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
-      PRIMARY KEY (bookmark_id, tag_id)
-    );
-
-    CREATE TABLE IF NOT EXISTS collections (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      color TEXT,
-      position INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS settings (
-      key TEXT PRIMARY KEY,
-      value TEXT
-    );
-
-    CREATE VIRTUAL TABLE IF NOT EXISTS bookmarks_fts USING fts5(
-      title, domain, note, content,
-      content='bookmarks', content_rowid='rowid',
-      tokenize='porter unicode61'
-    );
-
-    CREATE TRIGGER IF NOT EXISTS bookmarks_ai AFTER INSERT ON bookmarks BEGIN
-      INSERT INTO bookmarks_fts(rowid, title, domain, note, content)
-      VALUES (new.rowid, new.title, new.domain, new.note, new.content);
-    END;
-    CREATE TRIGGER IF NOT EXISTS bookmarks_ad AFTER DELETE ON bookmarks BEGIN
-      INSERT INTO bookmarks_fts(bookmarks_fts, rowid, title, domain, note, content)
-      VALUES ('delete', old.rowid, old.title, old.domain, old.note, old.content);
-    END;
-    CREATE TRIGGER IF NOT EXISTS bookmarks_au AFTER UPDATE ON bookmarks BEGIN
-      INSERT INTO bookmarks_fts(bookmarks_fts, rowid, title, domain, note, content)
-      VALUES ('delete', old.rowid, old.title, old.domain, old.note, old.content);
-      INSERT INTO bookmarks_fts(rowid, title, domain, note, content)
-      VALUES (new.rowid, new.title, new.domain, new.note, new.content);
-    END;
-  `)
-
-  // Additive column migrations for databases created before these fields existed
-  const cols = db.prepare('PRAGMA table_info(bookmarks)').all().map((c) => c.name)
-  if (!cols.includes('favicon_path')) {
-    db.exec('ALTER TABLE bookmarks ADD COLUMN favicon_path TEXT')
-  }
-  // Intrinsic size of the cached preview. The gallery gives each card its
-  // image's own shape, and the masonry places every card before any of them
-  // paint — so this has to be readable from the record, not from the <img>.
-  // Null means "not measured yet"; cardShape falls back until it is.
-  if (!cols.includes('image_w')) {
-    db.exec('ALTER TABLE bookmarks ADD COLUMN image_w INTEGER')
-  }
-  if (!cols.includes('image_h')) {
-    db.exec('ALTER TABLE bookmarks ADD COLUMN image_h INTEGER')
-  }
-  // Where the preview came from, and where to hold the image when a card has to
-  // crop it. Only cards clamped at the tall end crop at all (see cardShape in
-  // lib/format.js), so these matter for a small minority — but which minority is
-  // not knowable at render time without them.
-  //
-  // preview_source: 'og' | 'screenshot' | 'unknown' | null, where null means
-  // "not examined yet" and 'unknown' means "examined, unrecoverable". The
-  // distinction is what lets the backfill sweep converge instead of re-checking
-  // the same rows every launch.
-  //
-  // Unrecoverable is a real state, not a defensive branch: migrate.js nulls an
-  // image_url that was an internal /api/cached/<hash> reference, which destroys
-  // the only evidence of where the file came from. 9 rows of 244 in a real
-  // library are in it. The cheap heuristic (image_url IS NULL implies
-  // screenshot) labels every one of them a screenshot, and every one is an
-  // og:image — which is why this is a recorded value rather than an inference.
-  //
-  // focal_y: 0..1, the vertical point to keep when cropping. Null means "use the
-  // default for preview_source".
-  if (!cols.includes('preview_source')) {
-    db.exec('ALTER TABLE bookmarks ADD COLUMN preview_source TEXT')
-  }
-  if (!cols.includes('focal_y')) {
-    db.exec('ALTER TABLE bookmarks ADD COLUMN focal_y REAL')
-  }
-  // Gradient placeholder for a bookmark with no preview image. Every value is a
-  // pure function of the domain (see main/placeholder.js) so it could in
-  // principle be recomputed on demand — it is stored so that changing the
-  // generator later cannot reshuffle a library that already exists, and so the
-  // renderer needs no hashing on the layout path.
-  //
-  // ph_comp   which of the ten compositions
-  // ph_hue_a/b/c  the three hue stops, degrees. Saturation and lightness are
-  //           NOT stored: they come from the house palette in CSS, so the whole
-  //           library's register can be retuned without a migration.
-  // ph_aspect the card's shape, from the same set the reframing work used
-  if (!cols.includes('ph_comp')) db.exec('ALTER TABLE bookmarks ADD COLUMN ph_comp INTEGER')
-  if (!cols.includes('ph_hue_a')) db.exec('ALTER TABLE bookmarks ADD COLUMN ph_hue_a REAL')
-  if (!cols.includes('ph_hue_b')) db.exec('ALTER TABLE bookmarks ADD COLUMN ph_hue_b REAL')
-  if (!cols.includes('ph_hue_c')) db.exec('ALTER TABLE bookmarks ADD COLUMN ph_hue_c REAL')
-  if (!cols.includes('ph_aspect')) db.exec('ALTER TABLE bookmarks ADD COLUMN ph_aspect REAL')
-}
 
 // ── URL normalization (dedup) ──
 const TRACKING_PARAMS = new Set([
@@ -232,6 +107,7 @@ export function insertBookmark(fields) {
     id,
     url: fields.url,
     normalized_url: normalizeUrl(fields.url),
+    platform: fields.platform ?? platformFor(fields.url),
     title: fields.title ?? null,
     domain: fields.domain ?? null,
     summary: fields.summary ?? null,
@@ -260,12 +136,12 @@ export function insertBookmark(fields) {
     is_dead: fields.is_dead ? 1 : 0,
     collection_id: fields.collection_id ?? null
   }
-  db.prepare(`INSERT INTO bookmarks (id, url, normalized_url, title, domain, summary, image_url, image_path,
+  db.prepare(`INSERT INTO bookmarks (id, url, normalized_url, platform, title, domain, summary, image_url, image_path,
       image_w, image_h, preview_source, focal_y,
       ph_comp, ph_hue_a, ph_hue_b, ph_hue_c, ph_aspect,
       favicon_path, created_at, read_at, archived_at, deleted_at, favorited, source, hn_url, note, content,
       last_checked, is_dead, collection_id)
-    VALUES (@id, @url, @normalized_url, @title, @domain, @summary, @image_url, @image_path,
+    VALUES (@id, @url, @normalized_url, @platform, @title, @domain, @summary, @image_url, @image_path,
       @image_w, @image_h, @preview_source, @focal_y,
       @ph_comp, @ph_hue_a, @ph_hue_b, @ph_hue_c, @ph_aspect,
       @favicon_path, @created_at, @read_at, @archived_at, @deleted_at, @favorited, @source, @hn_url, @note, @content,
@@ -278,7 +154,8 @@ const UPDATABLE = new Set([
   'url', 'title', 'domain', 'summary', 'image_url', 'image_path', 'favicon_path', 'read_at', 'archived_at',
   'deleted_at', 'favorited', 'source', 'hn_url', 'note', 'content', 'last_checked', 'is_dead',
   'collection_id', 'image_w', 'image_h', 'preview_source', 'focal_y',
-  'ph_comp', 'ph_hue_a', 'ph_hue_b', 'ph_hue_c', 'ph_aspect'
+  'ph_comp', 'ph_hue_a', 'ph_hue_b', 'ph_hue_c', 'ph_aspect',
+  'platform', 'ai_description', 'ai_text', 'ai_enriched_at', 'ai_model'
 ])
 
 export function updateBookmark(id, patch) {
@@ -293,7 +170,12 @@ export function updateBookmark(id, patch) {
     }
     if (patch.url) {
       values.normalized_url = normalizeUrl(patch.url)
-      db.prepare(`UPDATE bookmarks SET ${sets}, normalized_url = @normalized_url WHERE id = @id`).run(values)
+      let platformSet = ''
+      if (!keys.includes('platform')) {
+        platformSet = ', platform = @platform_derived'
+        values.platform_derived = platformFor(patch.url)
+      }
+      db.prepare(`UPDATE bookmarks SET ${sets}, normalized_url = @normalized_url${platformSet} WHERE id = @id`).run(values)
     } else {
       db.prepare(`UPDATE bookmarks SET ${sets} WHERE id = @id`).run(values)
     }
@@ -354,9 +236,10 @@ export function searchBookmarks(query) {
     const like = `%${q}%`
     return db
       .prepare(`SELECT * FROM bookmarks
-                WHERE title LIKE ? OR domain LIKE ? OR note LIKE ? OR content LIKE ?
+                WHERE title LIKE @q OR domain LIKE @q OR note LIKE @q OR content LIKE @q
+                   OR summary LIKE @q OR tags_text LIKE @q OR ai_description LIKE @q OR ai_text LIKE @q
                 ORDER BY created_at DESC LIMIT 200`)
-      .all(like, like, like, like)
+      .all({ q: like })
       .map(hydrate)
   }
 }

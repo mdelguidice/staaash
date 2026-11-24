@@ -17,7 +17,11 @@ node scripts/build-icon.mjs   # regenerate build/icon.icns from the locked mark
 ## Architecture
 
 - `src/main/` — Electron main process
-  - `db.js` — SQLite schema (bookmarks, tags, collections, settings, FTS5), queries, URL normalization
+  - `db.js` — queries, URL normalization; opens the DB and runs `schema.js`
+  - `schema.js` — schema + versioned migrations (no Electron import, so `mcp/` tests reuse it).
+    v2 adds `platform`, `tags_text` (trigger-maintained), `ai_*` columns and widens FTS to
+    title/domain/summary/note/content/tags/AI text. Takes a `VACUUM INTO` backup
+    (`staaash.db.bak-pre-v2-*`) before migrating a non-empty library
   - `migrate.js` — one-time import from the old web app (`~/staaash/.cache/data.json` + images); guarded by the `migrated_v1` setting
   - `extract.js` — OG/meta extraction, readable-text capture, image disk cache, PageSpeed screenshot fallback, link health check (ported from `server.js`)
   - `ipc.js` — every typed channel the renderer can call
