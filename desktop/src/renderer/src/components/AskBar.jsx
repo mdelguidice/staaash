@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { SearchIcon } from './Icons.jsx'
 import Favicon from './Favicon.jsx'
 
@@ -15,8 +15,38 @@ function looksLikeQuestion(q) {
   )
 }
 
-export default function AskBar({ inputRef, query, onQuery, resultCount, onPickSource }) {
+// Tags worth offering as a filter for what's typed: exact name first, then names
+// that start with it, then names containing it as a word. Needs 2+ characters so
+// single keystrokes don't flash suggestions. Already-active tags are skipped.
+// An exact name match is offered alone.
+export function tagSuggestions(query, tags, activeTags = [], max = 2) {
+  const q = query.trim().toLowerCase()
+  if (q.length < 2 || looksLikeQuestion(q)) return []
+  const scored = []
+  for (const t of tags) {
+    if (activeTags.includes(t.id)) continue
+    const n = t.name.toLowerCase()
+    const rank = n === q ? 0 : n.startsWith(q) ? 1 : n.split(/[\s\-_/]+/).some((w) => w.startsWith(q)) ? 2 : -1
+    if (rank >= 0) scored.push({ t, rank })
+  }
+  scored.sort((a, b) => a.rank - b.rank || a.t.name.length - b.t.name.length)
+  // An exact match is the answer; don't crowd the bar with near-misses.
+  if (scored[0]?.rank === 0) return [scored[0].t]
+  return scored.slice(0, max).map((s) => s.t)
+}
+
+export default function AskBar({
+  inputRef,
+  query,
+  onQuery,
+  resultCount,
+  onPickSource,
+  tags = [],
+  activeTags = [],
+  onPickTag
+}) {
   const [ask, setAsk] = useState(null) // null | {status:'thinking'|'answer'|'error', ...}
+  const suggestions = useMemo(() => tagSuggestions(query, tags, activeTags), [query, tags, activeTags])
 
   useEffect(() => {
     if (!query) setAsk(null)
@@ -92,13 +122,29 @@ export default function AskBar({ inputRef, query, onQuery, resultCount, onPickSo
             value={query}
             onChange={(e) => onQuery(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') submit()
+              if (e.key !== 'Enter') return
+              // Plain words that name a tag: Enter applies the tag filter.
+              if (suggestions.length && onPickTag) onPickTag(suggestions[0].id)
+              else submit()
             }}
             placeholder="Search or ask a question…"
             aria-label="Search or ask a question"
             spellCheck={false}
             autoComplete="off"
           />
+          {suggestions.map((t, i) => (
+            <button
+              key={t.id}
+              type="button"
+              className="ask-tag-suggest"
+              onClick={() => onPickTag?.(t.id)}
+              title={`Show only saves tagged “${t.name}”`}
+            >
+              <span className="ask-tag-suggest-label">Filter by tag</span>
+              <span className="ask-tag-suggest-name">{t.name}</span>
+              {i === 0 && <span className="ask-tag-suggest-key" aria-hidden="true">↵</span>}
+            </button>
+          ))}
           {query && (
             <span className="kbd" style={{ border: 'none' }}>
               {resultCount} match{resultCount === 1 ? '' : 'es'}

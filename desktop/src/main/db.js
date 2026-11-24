@@ -208,6 +208,12 @@ export function addTagsToBookmarks(bookmarkIds, tagIds) {
 
 // ── Search (FTS5 with LIKE fallback) ──
 
+// bm25 weight per FTS column, in FTS_COLUMNS order (schema.js): title, domain,
+// summary, note, content, tags_text, ai_description, ai_text. Fields you wrote
+// or chose outrank long scraped page text. mcp/src/library.ts uses the same.
+const SEARCH_WEIGHTS = '6, 1, 2, 5, 0.5, 5, 3, 1.5'
+
+// Returns matches best-first; the renderer keeps that order while a query is active.
 export function searchBookmarks(query) {
   const q = query.trim()
   if (!q) return []
@@ -217,20 +223,21 @@ export function searchBookmarks(query) {
       .map((w) => `"${w.replace(/"/g, '""')}"*`)
       .join(' ')
     const rows = db
-      .prepare(`SELECT b.*, group_concat(bt.tag_id) AS tag_ids, rank
+      .prepare(`SELECT b.*,
+                  (SELECT group_concat(bt.tag_id) FROM bookmark_tags bt WHERE bt.bookmark_id = b.id) AS tag_ids,
+                  bm25(bookmarks_fts, ${SEARCH_WEIGHTS}) AS score
                 FROM bookmarks_fts f
                 JOIN bookmarks b ON b.rowid = f.rowid
-                LEFT JOIN bookmark_tags bt ON bt.bookmark_id = b.id
                 WHERE bookmarks_fts MATCH ?
-                GROUP BY b.id
-                ORDER BY rank`)
+                ORDER BY score`)
       .all(match)
     return rows.map((r) => ({
       ...r,
       favorited: !!r.favorited,
       is_dead: !!r.is_dead,
       tags: r.tag_ids ? r.tag_ids.split(',') : [],
-      tag_ids: undefined
+      tag_ids: undefined,
+      score: undefined
     }))
   } catch {
     const like = `%${q}%`

@@ -123,7 +123,8 @@ export default function App() {
       return
     }
     api['bookmarks:search'](query).then((rows) => {
-      if (!cancelled) setSearchIds(new Set(rows.map((r) => r.id)))
+      // id -> position in the best-first result list
+      if (!cancelled) setSearchIds(new Map(rows.map((r, i) => [r.id, i])))
     })
     return () => {
       cancelled = true
@@ -135,7 +136,10 @@ export default function App() {
     if (activeTags.length) {
       list = list.filter((b) => activeTags.every((t) => (b.tags || []).includes(t)))
     }
-    if (searchIds) list = list.filter((b) => searchIds.has(b.id))
+    // While searching, show best matches first instead of newest first.
+    if (searchIds) {
+      list = list.filter((b) => searchIds.has(b.id)).sort((a, b) => searchIds.get(a.id) - searchIds.get(b.id))
+    }
     return list
   }, [bookmarks, view, activeTags, searchIds])
 
@@ -470,6 +474,12 @@ export default function App() {
           onQuery={setQuery}
           resultCount={items.length}
           onPickSource={(b) => setDrawerId(b.id)}
+          tags={tags}
+          activeTags={activeTags}
+          onPickTag={(id) => {
+            setActiveTags((prev) => (prev.includes(id) ? prev : [...prev, id]))
+            setQuery('')
+          }}
         />
 
         {selection.length > 0 && (
