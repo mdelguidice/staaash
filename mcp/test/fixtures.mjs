@@ -16,14 +16,14 @@ export function tempDir() {
 }
 
 /** A database file as the app leaves it. version 1 = an app that predates this change. */
-export function makeDb({ version = 3, dir = tempDir() } = {}) {
+export function makeDb({ version = schema.SCHEMA_VERSION, dir = tempDir() } = {}) {
   const path = join(dir, 'staaash.db')
   mkdirSync(join(dir, 'images'), { recursive: true })
   const db = new Database(path)
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
   if (version === 1) migrateV1(db)
-  else migrateSchema(db)
+  else migrateSchema(db, { to: version })
   return { db, path, dir }
 }
 
@@ -37,12 +37,14 @@ export function addTag(db, name) {
 export function addSave(db, f) {
   const id = f.id ?? randomUUID()
   const cols = new Set(db.prepare('PRAGMA table_info(bookmarks)').all().map((c) => c.name))
+  // url: null is an image-only save (v4+); leaving url out means a made-up link.
+  const url = 'url' in f ? f.url : 'https://example.com/' + id
   const row = {
     id,
-    url: f.url ?? 'https://example.com/' + id,
-    normalized_url: (f.url ?? 'example.com/' + id).replace(/^https?:\/\//, ''),
+    url,
+    normalized_url: url ? url.replace(/^https?:\/\//, '') : null,
     title: f.title ?? null,
-    domain: f.domain ?? (f.url ? new URL(f.url).hostname.replace(/^www\./, '') : 'example.com'),
+    domain: 'domain' in f ? f.domain : url ? new URL(url).hostname.replace(/^www\./, '') : null,
     summary: f.summary ?? null,
     note: f.note ?? null,
     content: f.content ?? null,
@@ -53,7 +55,8 @@ export function addSave(db, f) {
     created_at: f.created_at ?? new Date().toISOString(),
     archived_at: f.archived_at ?? null,
     deleted_at: f.deleted_at ?? null,
-    ...(cols.has('platform') ? { platform: f.platform ?? platformFor(f.url ?? 'https://example.com') } : {}),
+    ...(cols.has('platform') ? { platform: 'platform' in f ? f.platform : url ? platformFor(url) : null } : {}),
+    ...(cols.has('kind') ? { kind: f.kind ?? (url ? 'link' : 'image'), inbox_id: f.inbox_id ?? null } : {}),
     ...(cols.has('ai_description') ? { ai_description: f.ai_description ?? null, ai_text: f.ai_text ?? null } : {})
   }
   const keys = Object.keys(row)

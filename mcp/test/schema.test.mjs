@@ -16,7 +16,7 @@ test('v1 library upgrades: backup taken, columns backfilled, new fields searchab
 
   const r = migrateSchema(db, { backupDir: dir })
   assert.equal(r.from, 1)
-  assert.equal(r.to, 3)
+  assert.equal(r.to, 4)
   assert.ok(r.backup && existsSync(r.backup), 'backup written')
   const bak = new Database(r.backup, { readonly: true })
   assert.equal(bak.prepare('SELECT count(*) n FROM bookmarks').get().n, 2, 'backup holds the pre-migration rows')
@@ -34,7 +34,7 @@ test('migration runs once; the v1 step on later launches does not undo it', () =
   addSave(db, { title: 'x' })
   migrateSchema(db, { backupDir: dir })
   const again = migrateSchema(db, { backupDir: dir }) // next launch: v1 runs first, then v2 check
-  assert.deepEqual(again, { from: 3, to: 3, backup: null })
+  assert.deepEqual(again, { from: 4, to: 4, backup: null })
   const cols = db.prepare('PRAGMA table_info(bookmarks_fts)').all().map((c) => c.name)
   assert.ok(cols.includes('ai_description') && cols.includes('tags_text'))
   migrateV1(db)
@@ -43,7 +43,7 @@ test('migration runs once; the v1 step on later launches does not undo it', () =
 
 test('fresh database: no backup, lands on the current version', () => {
   const { db, dir } = makeDb({ version: 1 })
-  assert.deepEqual(migrateSchema(db, { backupDir: dir }), { from: 1, to: 3, backup: null })
+  assert.deepEqual(migrateSchema(db, { backupDir: dir }), { from: 1, to: 4, backup: null })
 })
 
 test('tags_text and the index follow every tag change', () => {

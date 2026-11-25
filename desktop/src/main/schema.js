@@ -5,19 +5,21 @@
 // Code reads is the schema the app writes, not a hand-copied imitation of it.
 import { join } from 'node:path'
 
-export const SCHEMA_VERSION = 3
+export const SCHEMA_VERSION = 4
 
 /**
  * Bring a database up to SCHEMA_VERSION.
  *
  * opts.backupDir — where to write a snapshot before a migration that rewrites
  * existing data. Omit it and no backup is taken (tests, fresh databases).
+ * opts.to — stop at this version. Tests only, to build an older library.
  * Returns { from, to, backup } so the caller can log what happened.
  */
 export function migrateSchema(db, opts = {}) {
+  const target = opts.to ?? SCHEMA_VERSION
   migrateV1(db)
   const from = getVersion(db)
-  if (from >= SCHEMA_VERSION) return { from, to: from, backup: null }
+  if (from >= target) return { from, to: from, backup: null }
 
   // One snapshot before any step that rewrites existing data. VACUUM INTO
   // writes a consistent single-file copy (WAL included) and cannot run inside
@@ -26,13 +28,14 @@ export function migrateSchema(db, opts = {}) {
   const hasRows = db.prepare('SELECT count(*) AS n FROM bookmarks').get().n > 0
   if (opts.backupDir && hasRows) {
     const stamp = new Date().toISOString().replace(/[:.]/g, '-')
-    backup = join(opts.backupDir, `staaash.db.bak-pre-v${SCHEMA_VERSION}-${stamp}`)
+    backup = join(opts.backupDir, `staaash.db.bak-pre-v${target}-${stamp}`)
     db.prepare('VACUUM INTO ?').run(backup)
   }
 
-  if (from < 2) migrateV2(db)
-  if (from < 3) migrateV3(db)
-  return { from, to: SCHEMA_VERSION, backup }
+  if (from < 2 && target >= 2) migrateV2(db)
+  if (from < 3 && target >= 3) migrateV3(db)
+  if (from < 4 && target >= 4) migrateV4(db)
+  return { from, to: target, backup }
 }
 
 // v1: everything that existed before versioning. Idempotent, runs every launch.
@@ -236,10 +239,28 @@ function getVersion(db) {
   return row ? Number(row.value) || 1 : 1
 }
 
-function migrateV2(db) {
-  const tagsTextFor = (idExpr) => `(SELECT group_concat(t.name, ' ') FROM bookmark_tags bt
+const tagsTextFor = (idExpr) => `(SELECT group_concat(t.name, ' ') FROM bookmark_tags bt
       JOIN tags t ON t.id = bt.tag_id WHERE bt.bookmark_id = ${idExpr})`
 
+// tags_text upkeep. FK cascades fire these too (tag deleted -> its
+// bookmark_tags rows deleted -> each bookmark's tags_text recomputed).
+const TAGS_TEXT_TRIGGERS = ['bookmark_tags_ai', 'bookmark_tags_ad', 'tags_au_name']
+function createTagsTextTriggers(db) {
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS bookmark_tags_ai AFTER INSERT ON bookmark_tags BEGIN
+      UPDATE bookmarks SET tags_text = ${tagsTextFor('new.bookmark_id')} WHERE id = new.bookmark_id;
+    END;
+    CREATE TRIGGER IF NOT EXISTS bookmark_tags_ad AFTER DELETE ON bookmark_tags BEGIN
+      UPDATE bookmarks SET tags_text = ${tagsTextFor('old.bookmark_id')} WHERE id = old.bookmark_id;
+    END;
+    CREATE TRIGGER IF NOT EXISTS tags_au_name AFTER UPDATE OF name ON tags BEGIN
+      UPDATE bookmarks SET tags_text = ${tagsTextFor('bookmarks.id')}
+      WHERE id IN (SELECT bookmark_id FROM bookmark_tags WHERE tag_id = new.id);
+    END;
+  `)
+}
+
+function migrateV2(db) {
   db.transaction(() => {
     const existing = new Set(db.prepare('PRAGMA table_info(bookmarks)').all().map((c) => c.name))
     for (const [name, type] of V2_COLUMNS) {
@@ -257,20 +278,7 @@ function migrateV2(db) {
     // v1's CREATE ... IF NOT EXISTS stays a no-op on later launches.
     rebuildFts(db, V2_FTS_COLUMNS)
 
-    db.exec(`
-      -- tags_text upkeep. FK cascades fire these too (tag deleted -> its
-      -- bookmark_tags rows deleted -> each bookmark's tags_text recomputed).
-      CREATE TRIGGER IF NOT EXISTS bookmark_tags_ai AFTER INSERT ON bookmark_tags BEGIN
-        UPDATE bookmarks SET tags_text = ${tagsTextFor('new.bookmark_id')} WHERE id = new.bookmark_id;
-      END;
-      CREATE TRIGGER IF NOT EXISTS bookmark_tags_ad AFTER DELETE ON bookmark_tags BEGIN
-        UPDATE bookmarks SET tags_text = ${tagsTextFor('old.bookmark_id')} WHERE id = old.bookmark_id;
-      END;
-      CREATE TRIGGER IF NOT EXISTS tags_au_name AFTER UPDATE OF name ON tags BEGIN
-        UPDATE bookmarks SET tags_text = ${tagsTextFor('bookmarks.id')}
-        WHERE id IN (SELECT bookmark_id FROM bookmark_tags WHERE tag_id = new.id);
-      END;
-    `)
+    createTagsTextTriggers(db)
 
     setVersion(db, 2)
   })()
@@ -348,4 +356,96 @@ function migrateV3(db) {
     rebuildFts(db, FTS_COLUMNS)
     setVersion(db, 3)
   })()
+}
+
+// ── v4: URL becomes optional ──
+//
+// A screenshot saved from the phone has no link. SQLite can't drop NOT NULL in
+// place, so the table is rebuilt (sqlite.org/lang_altertable.html, "other
+// changes"): new table, copy, drop, rename. Things that make it safe:
+//
+// - rowid is copied explicitly. The search index is external-content keyed on
+//   rowid, so a renumbered table would point every hit at the wrong save.
+// - The new table is built from the old one's own column list, types, defaults
+//   and foreign keys, so nothing an older migration added is lost or reordered.
+// - Triggers that mention bookmarks (search index, tags_text) are dropped first:
+//   a RENAME re-parses every trigger in the schema and fails on one that names
+//   a table that doesn't exist at that moment. All are recreated after.
+// - Foreign keys are off for the swap (bookmark_tags and bookmark_images point
+//   at bookmarks; dropping it with them on would cascade-delete every tag and
+//   frame) and foreign_key_check must come back empty before commit.
+//
+// New columns:
+// inbox_id  the phone inbox's id for the item. Sync skips anything already here,
+//           so a crash between "saved" and "marked synced" can't duplicate it.
+// kind      'link' | 'image'. An image save has no URL until one is pasted in.
+const NULLABLE_IN_V4 = new Set(['url', 'normalized_url'])
+
+function migrateV4(db) {
+  const fkWasOn = db.pragma('foreign_keys', { simple: true }) === 1
+  db.pragma('foreign_keys = OFF') // a no-op inside a transaction, so set it here
+  try {
+    db.transaction(() => {
+      const cols = db.prepare('PRAGMA table_info(bookmarks)').all()
+      const fks = new Map(db.prepare('PRAGMA foreign_key_list(bookmarks)').all().map((f) => [f.from, f]))
+      const indexes = db
+        .prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = 'bookmarks' AND sql IS NOT NULL")
+        .all()
+        .map((r) => r.sql)
+      const before = db.prepare('SELECT count(*) AS n FROM bookmarks').get().n
+
+      const defs = cols.map((c) => {
+        let d = `${c.name} ${c.type}`
+        if (c.pk) d += ' PRIMARY KEY'
+        if (c.notnull && !NULLABLE_IN_V4.has(c.name)) d += ' NOT NULL'
+        if (c.dflt_value != null) d += ` DEFAULT ${c.dflt_value}`
+        const fk = fks.get(c.name)
+        if (fk) d += ` REFERENCES ${fk.table}(${fk.to}) ON DELETE ${fk.on_delete}`
+        return d
+      })
+      const names = new Set(cols.map((c) => c.name))
+      if (!names.has('inbox_id')) defs.push('inbox_id TEXT')
+      if (!names.has('kind')) defs.push("kind TEXT NOT NULL DEFAULT 'link'")
+      const copy = ['rowid', ...cols.map((c) => c.name)].join(', ')
+
+      for (const t of ['bookmarks_ai', 'bookmarks_ad', 'bookmarks_au', ...TAGS_TEXT_TRIGGERS]) {
+        db.exec(`DROP TRIGGER IF EXISTS ${t}`)
+      }
+      db.exec('DROP TABLE IF EXISTS bookmarks_fts')
+      db.exec(`CREATE TABLE bookmarks_v4 (\n  ${defs.join(',\n  ')}\n)`)
+      db.exec(`INSERT INTO bookmarks_v4 (${copy}) SELECT ${copy} FROM bookmarks`)
+      db.exec('DROP TABLE bookmarks')
+      db.exec('ALTER TABLE bookmarks_v4 RENAME TO bookmarks')
+      for (const sql of indexes) db.exec(sql)
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_bookmarks_normalized ON bookmarks(normalized_url);
+        CREATE INDEX IF NOT EXISTS idx_bookmarks_created ON bookmarks(created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_bookmarks_external ON bookmarks(external_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_bookmarks_inbox ON bookmarks(inbox_id) WHERE inbox_id IS NOT NULL;
+      `)
+      db.exec("UPDATE bookmarks SET kind = 'image' WHERE url IS NULL")
+
+      // Links to nothing would fail the check below and stop the app from
+      // opening. Clear them the way the cascades would have, had foreign keys
+      // been on when they were made.
+      db.exec(`
+        DELETE FROM bookmark_tags WHERE bookmark_id NOT IN (SELECT id FROM bookmarks)
+          OR tag_id NOT IN (SELECT id FROM tags);
+        DELETE FROM bookmark_images WHERE bookmark_id NOT IN (SELECT id FROM bookmarks);
+        UPDATE bookmarks SET collection_id = NULL
+          WHERE collection_id IS NOT NULL AND collection_id NOT IN (SELECT id FROM collections);
+      `)
+
+      createTagsTextTriggers(db)
+      rebuildFts(db, FTS_COLUMNS)
+
+      const after = db.prepare('SELECT count(*) AS n FROM bookmarks').get().n
+      if (after !== before) throw new Error(`v4 rebuild: ${before} rows before, ${after} after`)
+      const broken = db.prepare('PRAGMA foreign_key_check').all()
+      if (broken.length) throw new Error(`v4 rebuild: ${broken.length} broken references, first in ${broken[0].table}`)
+      setVersion(db, 4)
+    })()
+  } finally {
+    if (fkWasOn) db.pragma('foreign_keys = ON')
+  }
 }
