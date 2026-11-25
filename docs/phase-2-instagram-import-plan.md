@@ -1,6 +1,6 @@
 # Phase 2 plan: Instagram import
 
-Status: approved 2026-11-24 and built. Waiting on Mike's test on his Mac.
+Status: approved 2026-11-24, built, and confirmed on Mike's Mac 2026-11-25.
 
 Decided 2026-11-24: Instagram collections become tags. The import brings in only the collections Mike picks.
 
