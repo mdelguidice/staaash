@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useMemo } from 'react'
 import { SearchIcon } from './Icons.jsx'
 import Favicon from './Favicon.jsx'
+import { saveTitle, saveSource } from '../lib/format.js'
 
 const api = window.staaash
 
@@ -98,8 +99,8 @@ export default function AskBar({
                   {ask.sources.map((s) => (
                     <button key={s.id} className="ask-source" onClick={() => onPickSource(s)}>
                       <Favicon bookmark={s} />
-                      <span className="ask-source-title">{s.title || s.url}</span>
-                      <span className="ask-source-domain">{s.domain}</span>
+                      <span className="ask-source-title">{saveTitle(s)}</span>
+                      <span className="ask-source-domain">{saveSource(s)}</span>
                     </button>
                   ))}
                 </div>

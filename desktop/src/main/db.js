@@ -5,7 +5,7 @@ import { app } from 'electron'
 import { join } from 'node:path'
 import { mkdirSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
-import { migrateSchema, platformFor } from './schema.js'
+import { migrateSchema, platformFor, normalizeUrl } from './schema.js'
 
 let db = null
 
@@ -32,29 +32,9 @@ export function openDb() {
 }
 
 
-// ── URL normalization (dedup) ──
-const TRACKING_PARAMS = new Set([
-  'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
-  'fbclid', 'gclid', 'dclid', 'msclkid', 'twclid', 'igshid',
-  'mc_cid', 'mc_eid', 'ref', 'ref_src', 'source', 's', 'cmpid', 'share_id'
-])
-
-export function normalizeUrl(raw) {
-  try {
-    const u = new URL(raw)
-    u.hash = ''
-    u.hostname = u.hostname.replace(/^www\./, '').toLowerCase()
-    for (const key of [...u.searchParams.keys()]) {
-      if (TRACKING_PARAMS.has(key.toLowerCase())) u.searchParams.delete(key)
-    }
-    u.searchParams.sort()
-    let s = u.toString()
-    if (s.endsWith('/')) s = s.slice(0, -1)
-    return s.replace(/^https?:\/\//, '')
-  } catch {
-    return raw
-  }
-}
+// URL normalization lives in schema.js so Electron-free code (the phone inbox,
+// tests) dedupes exactly as the app does.
+export { normalizeUrl }
 
 // ── Row hydration ──
 function hydrate(row) {
@@ -108,6 +88,7 @@ export function insertBookmark(fields) {
     url: fields.url,
     normalized_url: normalizeUrl(fields.url),
     platform: fields.platform ?? platformFor(fields.url),
+    kind: fields.kind ?? (fields.url ? 'link' : 'image'),
     title: fields.title ?? null,
     domain: fields.domain ?? null,
     summary: fields.summary ?? null,
@@ -136,12 +117,12 @@ export function insertBookmark(fields) {
     is_dead: fields.is_dead ? 1 : 0,
     collection_id: fields.collection_id ?? null
   }
-  db.prepare(`INSERT INTO bookmarks (id, url, normalized_url, platform, title, domain, summary, image_url, image_path,
+  db.prepare(`INSERT INTO bookmarks (id, url, normalized_url, platform, kind, title, domain, summary, image_url, image_path,
       image_w, image_h, preview_source, focal_y,
       ph_comp, ph_hue_a, ph_hue_b, ph_hue_c, ph_aspect,
       favicon_path, created_at, read_at, archived_at, deleted_at, favorited, source, hn_url, note, content,
       last_checked, is_dead, collection_id)
-    VALUES (@id, @url, @normalized_url, @platform, @title, @domain, @summary, @image_url, @image_path,
+    VALUES (@id, @url, @normalized_url, @platform, @kind, @title, @domain, @summary, @image_url, @image_path,
       @image_w, @image_h, @preview_source, @focal_y,
       @ph_comp, @ph_hue_a, @ph_hue_b, @ph_hue_c, @ph_aspect,
       @favicon_path, @created_at, @read_at, @archived_at, @deleted_at, @favorited, @source, @hn_url, @note, @content,
@@ -156,7 +137,7 @@ const UPDATABLE = new Set([
   'collection_id', 'image_w', 'image_h', 'preview_source', 'focal_y',
   'ph_comp', 'ph_hue_a', 'ph_hue_b', 'ph_hue_c', 'ph_aspect',
   'platform', 'ai_description', 'ai_text', 'ai_enriched_at', 'ai_model',
-  'external_id', 'layout_type', 'visual_style', 'good_for', 'ai_confidence'
+  'external_id', 'layout_type', 'visual_style', 'good_for', 'ai_confidence', 'kind'
 ])
 
 export function updateBookmark(id, patch) {

@@ -127,6 +127,16 @@ export function imageSrc(bookmark) {
   return null
 }
 
+// A save from the phone can be an image with no link. These are what to show
+// wherever a title or a domain would go.
+export function saveTitle(b) {
+  return b.title || b.url || 'Screenshot'
+}
+
+export function saveSource(b) {
+  return b.domain || b.url || (b.source === 'phone' ? 'From phone' : 'Screenshot')
+}
+
 export function domainInitial(bookmark) {
   const d = bookmark.domain || bookmark.title || '?'
   return d.charAt(0).toUpperCase()

@@ -7,6 +7,8 @@ const INVOKE_CHANNELS = [
   'bookmarks:get',
   'bookmarks:add',
   'bookmarks:update',
+  'bookmarks:attach-link',
+  'bookmarks:merge',
   'bookmarks:delete-permanent',
   'bookmarks:bulk-update',
   'bookmarks:bulk-tag',

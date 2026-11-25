@@ -38,10 +38,9 @@ test('v3 library rebuilds to v4: backup, every row, rowid, tags, frames and sear
   const after = db.prepare('SELECT rowid, * FROM bookmarks ORDER BY rowid').all()
   assert.equal(after.length, before.length)
   for (const [i, row] of before.entries()) {
-    const { kind, inbox_id, ...rest } = after[i]
+    const { kind, ...rest } = after[i]
     assert.deepEqual(rest, row, `row ${row.id} unchanged, rowid included`)
     assert.equal(kind, 'link')
-    assert.equal(inbox_id, null)
   }
 
   const tagRows = db.prepare('SELECT bookmark_id, tag_id FROM bookmark_tags ORDER BY bookmark_id, tag_id').all()
@@ -62,7 +61,7 @@ test('v3 library rebuilds to v4: backup, every row, rowid, tags, frames and sear
   assert.deepEqual(fts(db, 'profile'), [])
 })
 
-test('v4 makes url optional and adds kind and inbox_id', () => {
+test('v4 makes url optional and adds kind and the inbox_applied table', () => {
   const { db } = v3Library()
   migrateSchema(db)
   assert.equal(col(db, 'url').notnull, 0)
@@ -73,12 +72,16 @@ test('v4 makes url optional and adds kind and inbox_id', () => {
   const fk = db.prepare('PRAGMA foreign_key_list(bookmarks)').all()
   assert.equal(fk[0]?.table, 'collections', 'collection reference kept')
 
-  const id = addSave(db, { url: null, title: 'Screenshot · 25 Nov', note: 'checkout empty state', inbox_id: 'inb_1' })
+  const id = addSave(db, { url: null, title: 'Screenshot · 25 Nov', note: 'checkout empty state' })
   const row = db.prepare('SELECT * FROM bookmarks WHERE id = ?').get(id)
   assert.equal(row.url, null)
   assert.equal(row.kind, 'image')
   assert.deepEqual(fts(db, 'checkout'), [id])
-  assert.throws(() => addSave(db, { url: null, inbox_id: 'inb_1' }), /UNIQUE/, 'one save per inbox item')
+  const applied = db.prepare('INSERT INTO inbox_applied (inbox_id, bookmark_id, applied_at) VALUES (?, ?, ?)')
+  applied.run('inb_1', id, '2026-11-25T10:00:00Z')
+  assert.throws(() => applied.run('inb_1', id, '2026-11-25T10:00:00Z'), /UNIQUE|PRIMARY/, 'each inbox item once')
+  db.prepare('DELETE FROM bookmarks WHERE id = ?').run(id)
+  assert.equal(db.prepare('SELECT bookmark_id FROM inbox_applied').get().bookmark_id, null, 'record outlives the save')
 })
 
 test('v4 runs once; a fresh database lands on v4 with no backup', () => {

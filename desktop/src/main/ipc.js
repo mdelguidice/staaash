@@ -12,6 +12,7 @@ import { createHash } from 'node:crypto'
 import { join, basename } from 'node:path'
 import { askStaaash, suggestCollection } from './ai.js'
 import { readExport, parseExport, planImport, applyImport, readPilot, applyPilot, UNFILED } from './instagram.js'
+import { attachLink, mergeInto } from './inbox.js'
 
 // The export Mike picked, parsed once and kept while the import sheet is open.
 let pendingExport = null
@@ -162,6 +163,59 @@ export function smartUrl(input) {
   return null
 }
 
+/**
+ * Fill a new link save in from its page, in the background: title, summary,
+ * favicon, page text, and a preview image unless it already has one (a phone
+ * save can arrive with Mike's own screenshot as its cover, which wins). Pushes
+ * the update to the renderer when done.
+ */
+export function enrichLink(item, notify, { keepTitle = false } = {}) {
+  const url = item.url
+  const domain = item.domain || ''
+  const hadImage = !!item.image_path
+  const typedTitle = keepTitle ? item.title : null
+  return extractMeta(url)
+    .then(async (meta) => {
+      const favicon_path = await fetchFavicon(meta.domain ?? domain).catch(() => null)
+      const image = hadImage
+        ? {}
+        : {
+            image_url: meta.image_url,
+            image_path: meta.image_path,
+            // Measured here, at save time, so the card has its shape before it first
+            // renders. The sweep exists for rows that predate this, not for this one.
+            ...(await previewFacts(meta.image_path, meta.preview_source)),
+            // A bookmark that came back with no preview gets its placeholder now,
+            // for the same reason: the masonry needs a shape before anything paints.
+            ...(await placeholderFacts({
+              image_path: meta.image_path, favicon_path, domain: meta.domain ?? domain, url
+            }))
+          }
+      const updated = db.updateBookmark(item.id, {
+        title: typedTitle ?? meta.title ?? item.title,
+        summary: meta.summary,
+        favicon_path,
+        domain: meta.domain ?? domain,
+        content: meta.content ?? null,
+        ...image
+      })
+      notify?.('bookmarks:updated', updated)
+      // Fire-and-forget AI collection suggestion (no-ops without an API key)
+      try {
+        const collectionId = await suggestCollection(updated)
+        if (collectionId) {
+          const withCollection = db.updateBookmark(item.id, { collection_id: collectionId })
+          notify?.('bookmarks:updated', withCollection)
+          notify?.('collections:changed')
+        }
+      } catch {
+        /* suggestion is best-effort */
+      }
+      return updated
+    })
+    .catch(() => null)
+}
+
 export async function addBookmark({ url, title, note, source, tags }, notify) {
   const finalUrl = smartUrl(url)
   if (!finalUrl) throw new Error('Not a valid URL')
@@ -185,42 +239,7 @@ export async function addBookmark({ url, title, note, source, tags }, notify) {
     tags: tags || []
   })
 
-  // Enrich in the background; push the update to the renderer when done.
-  extractMeta(finalUrl)
-    .then(async (meta) => {
-      const favicon_path = await fetchFavicon(meta.domain ?? domain).catch(() => null)
-      const updated = db.updateBookmark(item.id, {
-        title: meta.title ?? item.title,
-        summary: meta.summary,
-        image_url: meta.image_url,
-        image_path: meta.image_path,
-        favicon_path,
-        domain: meta.domain ?? domain,
-        content: meta.content ?? null,
-        // Measured here, at save time, so the card has its shape before it first
-        // renders. The sweep exists for rows that predate this, not for this one.
-        ...(await previewFacts(meta.image_path, meta.preview_source)),
-        // A bookmark that came back with no preview gets its placeholder now,
-        // for the same reason: the masonry needs a shape before anything paints.
-        ...(await placeholderFacts({
-          image_path: meta.image_path, favicon_path, domain: meta.domain ?? domain, url: finalUrl
-        }))
-      })
-      notify?.('bookmarks:updated', updated)
-      // Fire-and-forget AI collection suggestion (no-ops without an API key)
-      try {
-        const collectionId = await suggestCollection(updated)
-        if (collectionId) {
-          const withCollection = db.updateBookmark(item.id, { collection_id: collectionId })
-          notify?.('bookmarks:updated', withCollection)
-          notify?.('collections:changed')
-        }
-      } catch {
-        /* suggestion is best-effort */
-      }
-    })
-    .catch(() => {})
-
+  enrichLink(item, notify)
   notify?.('bookmarks:added', item)
   return item
 }
@@ -241,6 +260,21 @@ export function registerIpc(getWindow) {
     const updated = db.updateBookmark(id, patch)
     notify('bookmarks:updated', updated)
     return updated
+  })
+  // The drawer's paste-link button, on a save with no URL. Returns the updated
+  // save, or { status: 'duplicate', existing } so the drawer can ask first.
+  handle('bookmarks:attach-link', (id, url) => {
+    const r = attachLink(db.openDb(), id, url)
+    if (r.status === 'duplicate') return { status: 'duplicate', existing: db.getBookmark(r.existing.id) }
+    const updated = db.getBookmark(id)
+    notify('bookmarks:updated', updated)
+    enrichLink(updated, notify, { keepTitle: !/^Screenshot( ·|$)/.test(updated.title || '') })
+    return { status: 'attached', bookmark: updated }
+  })
+  handle('bookmarks:merge', (fromId, toId) => {
+    mergeInto(db.openDb(), fromId, toId)
+    notify('bookmarks:changed')
+    return { status: 'merged', bookmark: db.getBookmark(toId) }
   })
   handle('bookmarks:delete-permanent', (id) => {
     db.deleteBookmarkPermanently(id)
@@ -288,6 +322,7 @@ export function registerIpc(getWindow) {
   handle('meta:refetch', async (id) => {
     const b = db.getBookmark(id)
     if (!b) return null
+    if (!b.url) return b // an image save has no page to re-read
     const meta = await extractMeta(b.url)
     const updated = db.updateBookmark(id, {
       title: meta.title ?? b.title,
@@ -302,6 +337,7 @@ export function registerIpc(getWindow) {
   handle('meta:check-link', async (id) => {
     const b = db.getBookmark(id)
     if (!b) return null
+    if (!b.url) return { ok: true, skipped: true, bookmark: b }
     const result = await checkLink(b.url)
     const updated = db.updateBookmark(id, {
       last_checked: new Date().toISOString(),
@@ -368,7 +404,8 @@ export function registerIpc(getWindow) {
       defaultPath: `staaash-bookmarks-${new Date().toISOString().slice(0, 10)}.html`
     })
     if (canceled || !filePath) return { ok: false }
-    const items = db.listBookmarks().filter((b) => !b.deleted_at)
+    // A browser bookmark file can only hold links, so image saves are left out.
+    const items = db.listBookmarks().filter((b) => !b.deleted_at && b.url)
     const rows = items
       .map((b) => {
         const ts = Math.floor(new Date(b.created_at).getTime() / 1000)
@@ -482,7 +519,7 @@ export function registerIpc(getWindow) {
 
   // ── Dead-link background sweep (links unchecked in 7+ days) ──
   handle('health:sweep', async () => {
-    const all = db.listBookmarks().filter((b) => !b.deleted_at && !b.archived_at)
+    const all = db.listBookmarks().filter((b) => b.url && !b.deleted_at && !b.archived_at)
     const cutoff = Date.now() - 7 * 24 * 3600 * 1000
     const stale = all.filter((b) => !b.last_checked || new Date(b.last_checked).getTime() < cutoff)
     let checked = 0
@@ -522,7 +559,7 @@ export function registerIpc(getWindow) {
                 const p = await cacheImage(b.image_url)
                 if (p) patch.image_path = p
               }
-              if (!patch.image_path) {
+              if (!patch.image_path && b.url) {
                 const meta = await extractMeta(b.url)
                 if (meta.image_path) patch.image_path = meta.image_path
                 if (meta.image_url && !b.image_url) patch.image_url = meta.image_url

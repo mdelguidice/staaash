@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { saveTitle } from '../lib/format.js'
 
 const api = window.staaash
 
@@ -62,7 +63,7 @@ export function CaptureModal({ initialUrl, onSave, onClose }) {
             if (e.key === 'Enter') save()
           }}
         />
-        {dupe && <p className="modal-hint">Already staaashed as “{dupe.title || dupe.url}”.</p>}
+        {dupe && <p className="modal-hint">Already staaashed as “{saveTitle(dupe)}”.</p>}
       </div>
       <div className="field">
         <label htmlFor="capture-note">Note (optional)</label>

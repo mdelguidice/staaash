@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { timeAgo } from '../lib/format.js'
+import { timeAgo, saveTitle, saveSource } from '../lib/format.js'
 import { NoteIcon } from './Icons.jsx'
 import Favicon from './Favicon.jsx'
 
@@ -29,10 +29,10 @@ export default function ListView({ items, tags, focusedIndex, onOpenDrawer }) {
             <Favicon bookmark={b} size={30} radius={8} />
             <span className="list-main">
               <span className="list-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                {b.title || b.url}
+                {saveTitle(b)}
                 {b.note && <NoteIcon size={12} style={{ flex: 'none', color: 'var(--muted-2)' }} />}
               </span>
-              <span className="list-sub">{b.domain}</span>
+              <span className="list-sub">{saveSource(b)}</span>
             </span>
             <span className="list-tags">
               {rowTags.map((t) => (

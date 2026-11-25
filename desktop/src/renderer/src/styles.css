@@ -965,6 +965,12 @@ select {
   border-radius: 6px;
   transition: background-color var(--dur-micro) ease;
 }
+.card-meta .card-source {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
 .card-meta a:hover {
   background: rgba(250, 255, 230, 0.08);
 }
@@ -1549,6 +1555,35 @@ select {
 }
 .drawer-url:hover {
   color: var(--text);
+}
+.paste-link {
+  margin-top: 8px;
+}
+.paste-link-row {
+  display: flex;
+  gap: 8px;
+}
+.paste-link-row input {
+  flex: 1;
+  min-width: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 12.5px;
+}
+.paste-link-row input:focus-visible {
+  outline: none;
+  border-color: var(--focus-ring);
+}
+.paste-link-msg {
+  font-size: 12.5px;
+  color: var(--muted-2);
+  margin-top: 6px;
+  line-height: 1.5;
+}
+.paste-link-msg.is-error {
+  color: var(--danger);
 }
 .drawer-summary {
   font-size: 13px;

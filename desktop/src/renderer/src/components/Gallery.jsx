@@ -1,6 +1,6 @@
 import { useState, useRef, useMemo, useLayoutEffect, useEffect } from 'react'
 import { HeartIcon, CheckIcon, ExtLinkIcon, NoteIcon } from './Icons.jsx'
-import { timeAgo, hashColor, imageSrc, domainInitial, cardShape, focalPosition } from '../lib/format.js'
+import { timeAgo, hashColor, imageSrc, domainInitial, cardShape, focalPosition, saveTitle, saveSource } from '../lib/format.js'
 import { hasPlaceholder, placeholderStyle, resolveAdjacentHues } from '../lib/placeholder.js'
 import Favicon from './Favicon.jsx'
 
@@ -133,7 +133,7 @@ function Card({
       onClick={onClick}
       role="button"
       tabIndex={-1}
-      aria-label={b.title || b.url}
+      aria-label={saveTitle(b)}
       style={{ contentVisibility: 'auto', containIntrinsicSize: '320px' }}
     >
       <div className="card-media" style={{ aspectRatio: cardShape(b) }}>
@@ -164,7 +164,7 @@ function Card({
         )}
 
         <div className="card-veil">
-          <div className="card-veil-title">{b.title || b.url}</div>
+          <div className="card-veil-title">{saveTitle(b)}</div>
           {(collection || cardTags.length > 0) && (
             <div className="card-veil-pills">
               {collection && (
@@ -214,19 +214,26 @@ function Card({
       </div>
 
       <div className="card-meta">
-        <a
-          href={b.url}
-          onClick={(e) => {
-            e.preventDefault()
-            e.stopPropagation()
-            onOpen(b)
-          }}
-          title={`Open ${b.domain || b.url}`}
-        >
-          <Favicon bookmark={b} size={10} radius={3} />
-          <span className="card-domain">{b.domain || b.url}</span>
-          <ExtLinkIcon className="card-extlink" size={9} />
-        </a>
+        {b.url ? (
+          <a
+            href={b.url}
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              onOpen(b)
+            }}
+            title={`Open ${saveSource(b)}`}
+          >
+            <Favicon bookmark={b} size={10} radius={3} />
+            <span className="card-domain">{saveSource(b)}</span>
+            <ExtLinkIcon className="card-extlink" size={9} />
+          </a>
+        ) : (
+          <span className="card-source">
+            <Favicon bookmark={b} size={10} radius={3} />
+            <span className="card-domain">{saveSource(b)}</span>
+          </span>
+        )}
         {b.note && <NoteIcon className="card-noteind" size={11} aria-label="Has note" />}
         {b.is_dead ? <span className="card-dead" title="Link may be dead" /> : null}
         <span className="card-time">{timeAgo(b.created_at)}</span>

@@ -56,7 +56,7 @@ export function addSave(db, f) {
     archived_at: f.archived_at ?? null,
     deleted_at: f.deleted_at ?? null,
     ...(cols.has('platform') ? { platform: 'platform' in f ? f.platform : url ? platformFor(url) : null } : {}),
-    ...(cols.has('kind') ? { kind: f.kind ?? (url ? 'link' : 'image'), inbox_id: f.inbox_id ?? null } : {}),
+    ...(cols.has('kind') ? { kind: f.kind ?? (url ? 'link' : 'image') } : {}),
     ...(cols.has('ai_description') ? { ai_description: f.ai_description ?? null, ai_text: f.ai_text ?? null } : {})
   }
   const keys = Object.keys(row)

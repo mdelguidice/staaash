@@ -187,8 +187,23 @@ export default function App() {
     return updated
   }, [])
 
+  // Paste-link on an image save. With mergeIntoId, folds it into that save
+  // (after the drawer asked) and moves the drawer to the save that remains.
+  const attachLink = useCallback(async (id, url, mergeIntoId) => {
+    if (mergeIntoId) {
+      const r = await api['bookmarks:merge'](id, mergeIntoId)
+      setBookmarks((prev) => prev.filter((b) => b.id !== id).map((b) => (b.id === mergeIntoId ? r.bookmark : b)))
+      setDrawerId(mergeIntoId)
+      return r
+    }
+    const r = await api['bookmarks:attach-link'](id, url)
+    if (r.status === 'attached') setBookmarks((prev) => prev.map((b) => (b.id === id ? r.bookmark : b)))
+    return r
+  }, [])
+
   const openBookmark = useCallback(
     (b) => {
+      if (!b.url) return
       api['system:open-external'](b.url)
       if (!b.read_at) patch(b.id, { read_at: new Date().toISOString() })
     },
@@ -513,6 +528,7 @@ export default function App() {
           onClose={() => setDrawerId(null)}
           onPatch={patch}
           onOpen={openBookmark}
+          onAttachLink={attachLink}
           onFavorite={toggleFavorite}
           onArchive={archiveToggle}
           onTrash={trashBookmark}

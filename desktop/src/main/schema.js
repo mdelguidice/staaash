@@ -224,6 +224,31 @@ export function instagramPostId(url) {
   return m ? m[1] : null
 }
 
+// ── URL normalization (dedup) ──
+const TRACKING_PARAMS = new Set([
+  'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
+  'fbclid', 'gclid', 'dclid', 'msclkid', 'twclid', 'igshid',
+  'mc_cid', 'mc_eid', 'ref', 'ref_src', 'source', 's', 'cmpid', 'share_id'
+])
+
+export function normalizeUrl(raw) {
+  if (!raw) return null
+  try {
+    const u = new URL(raw)
+    u.hash = ''
+    u.hostname = u.hostname.replace(/^www\./, '').toLowerCase()
+    for (const key of [...u.searchParams.keys()]) {
+      if (TRACKING_PARAMS.has(key.toLowerCase())) u.searchParams.delete(key)
+    }
+    u.searchParams.sort()
+    let s = u.toString()
+    if (s.endsWith('/')) s = s.slice(0, -1)
+    return s.replace(/^https?:\/\//, '')
+  } catch {
+    return raw
+  }
+}
+
 export function platformFor(url) {
   try {
     const host = new URL(url).hostname.replace(/^www\./, '').toLowerCase()
@@ -375,10 +400,14 @@ function migrateV3(db) {
 //   at bookmarks; dropping it with them on would cascade-delete every tag and
 //   frame) and foreign_key_check must come back empty before commit.
 //
-// New columns:
-// inbox_id  the phone inbox's id for the item. Sync skips anything already here,
-//           so a crash between "saved" and "marked synced" can't duplicate it.
+// New column:
 // kind      'link' | 'image'. An image save has no URL until one is pasted in.
+//
+// New table inbox_applied: one row per phone-inbox item already written into
+// the library, and the save it landed in. Sync skips anything listed, so a crash
+// between "saved here" and "marked synced on the Worker" can't duplicate it. A
+// table, not a column, because several phone items can land in one save (a link
+// shared twice, or a screenshot merged into a link that was already here).
 const NULLABLE_IN_V4 = new Set(['url', 'normalized_url'])
 
 function migrateV4(db) {
@@ -404,7 +433,6 @@ function migrateV4(db) {
         return d
       })
       const names = new Set(cols.map((c) => c.name))
-      if (!names.has('inbox_id')) defs.push('inbox_id TEXT')
       if (!names.has('kind')) defs.push("kind TEXT NOT NULL DEFAULT 'link'")
       const copy = ['rowid', ...cols.map((c) => c.name)].join(', ')
 
@@ -421,7 +449,11 @@ function migrateV4(db) {
         CREATE INDEX IF NOT EXISTS idx_bookmarks_normalized ON bookmarks(normalized_url);
         CREATE INDEX IF NOT EXISTS idx_bookmarks_created ON bookmarks(created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_bookmarks_external ON bookmarks(external_id);
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_bookmarks_inbox ON bookmarks(inbox_id) WHERE inbox_id IS NOT NULL;
+        CREATE TABLE IF NOT EXISTS inbox_applied (
+          inbox_id TEXT PRIMARY KEY,
+          bookmark_id TEXT REFERENCES bookmarks(id) ON DELETE SET NULL,
+          applied_at TEXT NOT NULL
+        );
       `)
       db.exec("UPDATE bookmarks SET kind = 'image' WHERE url IS NULL")
 

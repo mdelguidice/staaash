@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { XIcon, HeartIcon, DotsIcon, PlusIcon, CheckIcon, ChevronIcon } from './Icons.jsx'
-import { timeAgo, hashColor, imageSrc } from '../lib/format.js'
+import { timeAgo, hashColor, imageSrc, saveTitle, saveSource } from '../lib/format.js'
 import Favicon from './Favicon.jsx'
 
 const CLOSE_MS = 320 // matches --dur-sheet-out (+ a hair of slack)
@@ -16,7 +16,8 @@ export default function Drawer({
   onArchive,
   onTrash,
   onRestore,
-  onCreateTag
+  onCreateTag,
+  onAttachLink
 }) {
   const [phase, setPhase] = useState('enter') // enter → open → closing
   const [menuOpen, setMenuOpen] = useState(false)
@@ -125,11 +126,11 @@ export default function Drawer({
   return (
     <>
       <div className={`drawer-scrim${stateClass}`} onClick={close} />
-      <aside className={`drawer${stateClass}`} role="dialog" aria-label={b.title || 'Bookmark details'}>
+      <aside className={`drawer${stateClass}`} role="dialog" aria-label={saveTitle(b)}>
         <div className="drawer-head">
           <span className="drawer-head-domain">
             <Favicon bookmark={b} />
-            <span>{b.domain || b.url}</span>
+            <span>{saveSource(b)}</span>
           </span>
           <div className="drawer-head-actions" ref={menuRef}>
             <button
@@ -203,17 +204,21 @@ export default function Drawer({
             )}
 
             <div>
-              <h2 className="drawer-title">{b.title || b.url}</h2>
-              <a
-                className="drawer-url"
-                href={b.url}
-                onClick={(e) => {
-                  e.preventDefault()
-                  onOpen(b)
-                }}
-              >
-                {b.url}
-              </a>
+              <h2 className="drawer-title">{saveTitle(b)}</h2>
+              {b.url ? (
+                <a
+                  className="drawer-url"
+                  href={b.url}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    onOpen(b)
+                  }}
+                >
+                  {b.url}
+                </a>
+              ) : (
+                <PasteLink bookmark={b} onAttach={onAttachLink} />
+              )}
               {b.is_dead ? <p className="drawer-dead">This link may be dead.</p> : null}
             </div>
 
@@ -451,5 +456,116 @@ export default function Drawer({
         </div>
       </aside>
     </>
+  )
+}
+
+// For a save with no URL (a screenshot from the phone). Reads the clipboard
+// first because that's where a copied link usually is; falls back to a field.
+// If another save already has the link, asks before folding this one into it.
+function PasteLink({ bookmark: b, onAttach }) {
+  const [typing, setTyping] = useState(false)
+  const [draft, setDraft] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [dupe, setDupe] = useState(null)
+
+  useEffect(() => {
+    setTyping(false)
+    setDraft('')
+    setError('')
+    setDupe(null)
+  }, [b.id])
+
+  const submit = async (url) => {
+    setBusy(true)
+    setError('')
+    try {
+      const r = await onAttach(b.id, url)
+      if (r?.status === 'duplicate') {
+        setDupe({ ...r.existing, url })
+      } else {
+        setTyping(false)
+        setDraft('')
+      }
+    } catch (e) {
+      setError(String(e?.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''))
+      setTyping(true)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const fromClipboard = async () => {
+    const url = await window.staaash['system:clipboard-url']()
+    if (url) return submit(url)
+    setError('No link on the clipboard. Paste or type one here.')
+    setTyping(true)
+  }
+
+  if (dupe) {
+    return (
+      <div className="paste-link">
+        <p className="paste-link-msg">
+          Already saved as “{dupe.title || dupe.url}”. Move this screenshot, its note and tags into that save?
+        </p>
+        <div className="note-actions">
+          <button className="btn" onClick={() => setDupe(null)} disabled={busy}>
+            Cancel
+          </button>
+          <button
+            className="btn btn-primary"
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true)
+              try {
+                await onAttach(b.id, dupe.url, dupe.id)
+              } finally {
+                setBusy(false)
+              }
+            }}
+          >
+            Merge
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="paste-link">
+      {typing ? (
+        <form
+          className="paste-link-row"
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (draft.trim()) submit(draft.trim())
+          }}
+        >
+          <input
+            autoFocus
+            type="url"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="https://"
+            aria-label="Link for this screenshot"
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.stopPropagation()
+                setTyping(false)
+                setError('')
+              }
+            }}
+          />
+          <button className="btn btn-primary" type="submit" disabled={busy || !draft.trim()}>
+            Add link
+          </button>
+        </form>
+      ) : (
+        <button className="mini-btn paste-link-btn" onClick={fromClipboard} disabled={busy}>
+          Paste link
+        </button>
+      )}
+      {error && <p className="paste-link-msg is-error">{error}</p>}
+    </div>
   )
 }
