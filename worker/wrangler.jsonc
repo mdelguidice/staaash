@@ -1,0 +1,15 @@
+// The phone inbox. Setup and deploy: worker/README.md (./setup.sh does it all).
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "staaash-inbox",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-11-01",
+  // The phone web app. Requests that aren't a file here go to the Worker.
+  "assets": { "directory": "./public", "not_found_handling": "none" },
+  "d1_databases": [
+    // setup.sh writes the real id into wrangler.local.jsonc, not here.
+    { "binding": "DB", "database_name": "staaash-inbox", "database_id": "local-only", "migrations_dir": "migrations" }
+  ],
+  "r2_buckets": [{ "binding": "IMAGES", "bucket_name": "staaash-inbox-images" }],
+  "observability": { "enabled": true }
+}
