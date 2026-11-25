@@ -6,13 +6,14 @@ import {
   Menu,
   clipboard,
   shell,
-  net
+  net,
+  dialog
 } from 'electron'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { openDb, imagesDir } from './db.js'
 import { runMigrationIfNeeded } from './migrate.js'
-import { registerIpc, addBookmark, smartUrl, importPilot } from './ipc.js'
+import { registerIpc, addBookmark, smartUrl, importPilot, syncPhoneInbox } from './ipc.js'
 import { startExtensionServer } from './httpServer.js'
 import * as db from './db.js'
 
@@ -89,6 +90,33 @@ function notify(channel, payload) {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload)
 }
 
+const plural = (n, one, many = one + 's') => `${n} ${n === 1 ? one : many}`
+
+async function syncFromMenu() {
+  const r = await syncPhoneInbox(notify)
+  if (r.skipped === 'not-set-up') {
+    const { response } = await dialog.showMessageBox(mainWindow, {
+      type: 'info',
+      message: 'The phone inbox isn’t set up yet',
+      detail: 'Add the inbox address and desktop token in Settings.',
+      buttons: ['Open Settings', 'Cancel']
+    })
+    if (response === 0) notify('ui:open-settings')
+    return
+  }
+  if (r.error) {
+    await dialog.showMessageBox(mainWindow, { type: 'error', message: 'Couldn’t sync the phone inbox', detail: r.error })
+    return
+  }
+  const lines = []
+  if (r.created) lines.push(`${plural(r.created, 'new save')} from your phone.`)
+  if (r.addedTo) lines.push(`${plural(r.addedTo, 'save')} already here got the phone’s screenshots or note.`)
+  if (!r.created && !r.addedTo) lines.push('Nothing new from your phone.')
+  if (r.failed.length) lines.push(`${plural(r.failed.length, 'item')} couldn’t be downloaded and will be tried again next sync: ${r.failed.map((f) => f.error).join('; ')}`)
+  if (r.pending) lines.push(`${plural(r.pending, 'item')} still waiting in the inbox.`)
+  await dialog.showMessageBox(mainWindow, { type: 'info', message: 'Phone inbox synced', detail: lines.join('\n\n') })
+}
+
 function buildMenu() {
   const template = [
     {
@@ -127,6 +155,11 @@ function buildMenu() {
         {
           label: 'Import Pilot Descriptions…',
           click: () => importPilot(mainWindow, notify)
+        },
+        { type: 'separator' },
+        {
+          label: 'Sync Phone Inbox',
+          click: () => syncFromMenu()
         },
         { type: 'separator' },
         { role: 'close' }
@@ -176,6 +209,11 @@ app.whenReady().then(async () => {
     const url = /^https?:\/\/\S+$/i.test(text) ? text : null
     notify('ui:open-capture', { url })
   })
+
+  // Phone inbox: at launch, then every 5 minutes while the app is open.
+  // Silent unless something arrives; File › Sync Phone Inbox reports either way.
+  syncPhoneInbox(notify)
+  setInterval(() => syncPhoneInbox(notify), 5 * 60 * 1000)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

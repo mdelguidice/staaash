@@ -94,13 +94,27 @@ export function SettingsModal({ onClose, showToast }) {
   const [apiKey, setApiKey] = useState('')
   const [keyLoaded, setKeyLoaded] = useState(false)
   const [rescan, setRescan] = useState(null) // null | {done, total}
+  const [inboxUrl, setInboxUrl] = useState('')
+  const [inboxToken, setInboxToken] = useState('')
+  const [inboxCheck, setInboxCheck] = useState(null) // null | 'checking' | { ok, pending?, error? }
+  const [lastSync, setLastSync] = useState({ at: null, error: null })
 
   useEffect(() => {
     api['settings:get']('anthropic_api_key').then((v) => {
       setApiKey(v || '')
       setKeyLoaded(true)
     })
+    api['settings:get']('inbox_url').then((v) => setInboxUrl(v || ''))
+    api['settings:get']('inbox_token').then((v) => setInboxToken(v || ''))
+    Promise.all([api['settings:get']('inbox_last_sync'), api['settings:get']('inbox_last_error')]).then(([at, error]) =>
+      setLastSync({ at, error })
+    )
   }, [])
+
+  const checkInbox = async () => {
+    setInboxCheck('checking')
+    setInboxCheck(await api['inbox:test'](inboxUrl.trim(), inboxToken.trim()))
+  }
 
   useEffect(() => {
     return api.on('media:rescan-progress', (p) => setRescan(p))
@@ -136,6 +150,52 @@ export function SettingsModal({ onClose, showToast }) {
         />
         <p className="modal-hint">
           Stored locally on this Mac. Without a key, the bar falls back to plain search.
+        </p>
+      </div>
+
+      <div className="field">
+        <label htmlFor="settings-inbox-url">Phone inbox</label>
+        <input
+          id="settings-inbox-url"
+          type="url"
+          value={inboxUrl}
+          placeholder="https://staaash-inbox.<you>.workers.dev"
+          spellCheck={false}
+          autoComplete="off"
+          onChange={(e) => {
+            setInboxUrl(e.target.value)
+            setInboxCheck(null)
+          }}
+        />
+        <input
+          id="settings-inbox-token"
+          aria-label="Desktop token"
+          type="password"
+          value={inboxToken}
+          placeholder="Desktop token"
+          spellCheck={false}
+          autoComplete="off"
+          style={{ marginTop: 8 }}
+          onChange={(e) => {
+            setInboxToken(e.target.value)
+            setInboxCheck(null)
+          }}
+        />
+        <div className="modal-row" style={{ marginTop: 8 }}>
+          <button className="btn" onClick={checkInbox} disabled={inboxCheck === 'checking' || !inboxUrl.trim() || !inboxToken.trim()}>
+            {inboxCheck === 'checking' ? 'Checking…' : 'Test connection'}
+          </button>
+        </div>
+        <p className="modal-hint" aria-live="polite">
+          {inboxCheck && inboxCheck !== 'checking'
+            ? inboxCheck.ok
+              ? `Connected. ${inboxCheck.pending === 1 ? '1 item' : `${inboxCheck.pending} items`} waiting.`
+              : inboxCheck.error
+            : lastSync.error
+              ? `Last sync failed: ${lastSync.error}`
+              : lastSync.at
+                ? `Syncs at launch and every 5 minutes. Last sync ${new Date(lastSync.at).toLocaleString()}.`
+                : 'Address and desktop token from worker/setup.sh. Syncs at launch and every 5 minutes.'}
         </p>
       </div>
 
@@ -176,7 +236,7 @@ export function SettingsModal({ onClose, showToast }) {
           </button>
         </div>
         <p className="modal-hint">
-          Everything lives in ~/Library/Application Support/staaash — no cloud, no accounts.
+          Your library lives in ~/Library/Application Support/staaash. Only phone saves pass through your Cloudflare inbox on the way here.
         </p>
       </div>
 
@@ -185,6 +245,10 @@ export function SettingsModal({ onClose, showToast }) {
           className="btn btn-primary"
           onClick={async () => {
             await api['settings:set']('anthropic_api_key', apiKey.trim())
+            const newUrl = inboxUrl.trim().replace(/\/+$/, '')
+            await api['settings:set']('inbox_url', newUrl)
+            await api['settings:set']('inbox_token', inboxToken.trim())
+            if (newUrl && inboxToken.trim()) api['inbox:sync']()
             showToast('Settings saved')
             onClose()
           }}

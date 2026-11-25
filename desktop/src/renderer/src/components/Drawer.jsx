@@ -449,9 +449,11 @@ export default function Drawer({
               {b.source && <span>via {b.source}</span>}
             </div>
 
-            <button className="drawer-open-btn" onClick={() => onOpen(b)}>
-              Open
-            </button>
+            {b.url && (
+              <button className="drawer-open-btn" onClick={() => onOpen(b)}>
+                Open
+              </button>
+            )}
           </div>
         </div>
       </aside>

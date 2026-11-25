@@ -13,6 +13,7 @@ import { join, basename } from 'node:path'
 import { askStaaash, suggestCollection } from './ai.js'
 import { readExport, parseExport, planImport, applyImport, readPilot, applyPilot, UNFILED } from './instagram.js'
 import { attachLink, mergeInto } from './inbox.js'
+import { syncInbox, testInbox } from './sync.js'
 
 // The export Mike picked, parsed once and kept while the import sheet is open.
 let pendingExport = null
@@ -244,6 +245,36 @@ export async function addBookmark({ url, title, note, source, tags }, notify) {
   return item
 }
 
+// ── Phone inbox ──
+// One run at a time; a run asked for while one is going joins it.
+let syncRun = null
+export function syncPhoneInbox(notify) {
+  if (syncRun) return syncRun
+  const inboxUrl = db.getSetting('inbox_url')
+  const token = db.getSetting('inbox_token')
+  if (!inboxUrl || !token) return Promise.resolve({ skipped: 'not-set-up' })
+  syncRun = syncInbox({ db: db.openDb(), imagesDir: db.imagesDir(), inboxUrl, token })
+    .then((r) => {
+      db.setSetting('inbox_last_sync', new Date().toISOString())
+      db.setSetting('inbox_last_error', '')
+      if (r.changed.length) notify?.('bookmarks:changed')
+      for (const id of r.needsPreview) {
+        const b = db.getBookmark(id)
+        if (b) enrichLink(b, notify)
+      }
+      notify?.('inbox:synced', r)
+      return r
+    })
+    .catch((e) => {
+      db.setSetting('inbox_last_error', e.message || String(e))
+      return { error: e.message || String(e), auth: !!e.auth }
+    })
+    .finally(() => {
+      syncRun = null
+    })
+  return syncRun
+}
+
 export function registerIpc(getWindow) {
   const notify = (channel, payload) => {
     const win = getWindow()
@@ -375,6 +406,14 @@ export function registerIpc(getWindow) {
   handle('ask:has-key', () => !!db.getSetting('anthropic_api_key'))
 
   // ── Settings ──
+  handle('inbox:sync', () => syncPhoneInbox(notify))
+  handle('inbox:test', async (inboxUrl, token) => {
+    try {
+      return await testInbox({ inboxUrl, token })
+    } catch (e) {
+      return { ok: false, error: e.message || String(e) }
+    }
+  })
   handle('settings:get', (key) => db.getSetting(key))
   handle('settings:set', (key, value) => {
     db.setSetting(key, value)

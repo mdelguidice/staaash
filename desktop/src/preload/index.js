@@ -41,7 +41,9 @@ const INVOKE_CHANNELS = [
   'instagram:open',
   'instagram:plan',
   'instagram:apply',
-  'instagram:close'
+  'instagram:close',
+  'inbox:sync',
+  'inbox:test'
 ]
 
 const EVENT_CHANNELS = [
@@ -52,7 +54,8 @@ const EVENT_CHANNELS = [
   'media:rescan-progress',
   'ui:open-capture',
   'ui:open-settings',
-  'ui:open-instagram-import'
+  'ui:open-instagram-import',
+  'inbox:synced'
 ]
 
 const api = {}

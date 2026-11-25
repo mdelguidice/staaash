@@ -96,7 +96,11 @@ export default function App() {
       api.on('collections:changed', () => api['collections:list']().then(setCollections)),
       api.on('ui:open-capture', ({ url }) => setCapture({ url: url || '' })),
       api.on('ui:open-settings', () => setSettingsOpen(true)),
-      api.on('ui:open-instagram-import', () => setIgImportOpen(true))
+      api.on('ui:open-instagram-import', () => setIgImportOpen(true)),
+      api.on('inbox:synced', (r) => {
+        const n = (r?.created || 0) + (r?.addedTo || 0)
+        if (n) showToast(n === 1 ? '1 save from your phone' : `${n} saves from your phone`)
+      })
     ]
     return () => offs.forEach((off) => off())
   }, [reload])

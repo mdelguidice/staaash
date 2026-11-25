@@ -1559,6 +1559,19 @@ select {
 .paste-link {
   margin-top: 8px;
 }
+.paste-link-btn {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted-2);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  padding: 5px 10px;
+  transition: color var(--dur-micro) ease, border-color var(--dur-micro) ease;
+}
+.paste-link-btn:hover {
+  color: var(--text);
+  border-color: var(--muted-2);
+}
 .paste-link-row {
   display: flex;
   gap: 8px;
