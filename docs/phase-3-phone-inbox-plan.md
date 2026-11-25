@@ -16,14 +16,17 @@ Already decided: Cloudflare Worker + D1 + R2 on Mike's account. Images stay in R
 
 ## Phone client
 
-Recommended: an **iOS Shortcut** in the share sheet ("Save to staaash").
+Mike's phone is Android. Recommended: a **web app served by the Worker itself**, installed to the home screen from Chrome. It registers as a share target, so "staaash" appears in the Android share sheet.
 
-- It accepts a link, an image, or several images from Safari, Instagram, Photos or the screenshot preview, plus an optional note.
-- It sends them in one request to the Worker with the phone token.
-- It shows "Saved" or the error.
-- It needs no App Store, no Xcode and no $99/yr developer account. I write it as a step list plus a signed `.shortcut` file. Mike adds the token once.
+- It accepts a link, an image, or several images from Chrome, Instagram, Photos or the screenshot preview. Android apps often share a link as plain text, Instagram included, so the app pulls the first URL out of the shared text.
+- A small sheet opens with a thumbnail or the link, an optional note, and Save. It closes on "Saved".
+- **Offline:** a save made with no signal is kept on the phone and sent when the connection returns (Chrome's background sync). If that isn't available, it's sent the next time the app opens. The sheet says "Queued" so Mike knows.
+- It needs no Play Store, Android Studio or sideloaded APK. Mike pastes the phone token once, on the app's own settings screen.
+- Updating it means redeploying the Worker. The phone picks up the new version the next time the app opens.
 
-Weakest point: with no signal, the save fails and isn't queued. Mike has to retry it. A native app with a share extension would queue offline, but it needs Xcode, signing, and re-installing every 7 days without a paid account. Not worth it for phase 3.
+Weakest point: share targets only work once the app is installed from Chrome (or Samsung Internet), not from a bookmark. Firefox on Android can't do it. A native Android app is the fallback if this falls short. It would cost a Kotlin project and sideloading, and it isn't needed for phase 3.
+
+iOS: the same web app installs on an iPhone but can't appear in the iOS share sheet. If Mike moves to iPhone, an iOS Shortcut posting to the same `POST /items` is about a day's work (estimate).
 
 ## Worker (`worker/`, new)
 
@@ -32,6 +35,7 @@ TypeScript, wrangler, tested locally with `@cloudflare/vitest-pool-workers`. Not
 | Route | Token | Does |
 |---|---|---|
 | `POST /items` | phone | multipart: `url?`, `note?`, `image*`, `saved_at`. Needs at least a URL or an image. Images ≤ 20 MB each, max 10. |
+| `GET /app/*` | none | The phone web app: page, manifest, service worker, icons. No data, no secrets. |
 | `GET /items?since=…` | desktop | Unsynced items, oldest first, with image keys and sizes. |
 | `GET /images/:key` | desktop | Streams one image from R2. |
 | `POST /items/:id/synced` | desktop | Marks an item synced. Doesn't delete it. |
@@ -75,7 +79,7 @@ TypeScript, wrangler, tested locally with `@cloudflare/vitest-pool-workers`. Not
 1. Install wrangler and log in (`npx wrangler login`).
 2. Run `worker/setup.sh`. It creates the D1 database and R2 bucket, sets both tokens as secrets, deploys, and prints the URL and tokens once.
 3. Paste the URL and desktop token into staaash Settings.
-4. Install the Shortcut on the iPhone and paste the phone token into it.
+4. On the phone, open `<worker-url>/app` in Chrome, tap Install, open it once, and paste the phone token.
 
 ## Build steps (after approval)
 
@@ -83,23 +87,26 @@ TypeScript, wrangler, tested locally with `@cloudflare/vitest-pool-workers`. Not
 2. Null-URL paths across the app and MCP, with tests.
 3. Worker + D1 + R2, with local tests: token scopes, validation, the merge window both ways, and sync idempotency.
 4. Desktop sync, Settings, and the paste-link button.
-5. The Shortcut and the setup script.
+5. The phone web app (share target, offline queue) and the setup script.
 6. Stop for Mike to test, on the Mac and the phone:
-   - a link
-   - a screenshot
+   - a link from Chrome
+   - a reel from Instagram
+   - a screenshot from the screenshot preview
    - a screenshot then a link
    - a link already in the library
    - Mac asleep while saving, then a sync
+   - a save in airplane mode, then back online
    - a wrong token
 
 ## Risks
 
 - **The table rebuild touches every row.** Mitigations: the backup, rowid preserved, count checks before commit, and the whole step in one transaction.
-- **The phone token sits in a Shortcut.** Anyone holding it can only add items, not read them. Rotating it means re-pasting it in the Shortcut.
+- **The phone token sits in the phone web app's storage.** Anyone holding it can only add items, not read them. Rotating it means re-pasting it on the phone.
+- **Android share sheets vary by app.** Some send a link as `url`, some as `text` with extra words around it. The test list covers Chrome, Instagram and the screenshot preview.
 - **Instagram's share sheet gives a link, not the image.** Those saves get the placeholder until phase 4's frame fetch, the same as imported saves.
 - **The Worker free tier is fine for one person** (estimate: well under 1% of the daily request limit). R2 storage grows with screenshots, at about 1 GB per ~2,000 screenshots (estimate).
 
 ## Open questions
 
-1. iOS Shortcut as the phone client (recommended), or a native app?
+1. An installable web app as the Android client (recommended), or a native Android app?
 2. Is a 2-minute merge window right?

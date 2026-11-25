@@ -13,5 +13,5 @@ Live app is `desktop/` (Electron ~42.1, pinned: don't bump). The visual-diff har
 
 ## What is next
 
-- Phase 3 now, design overhaul after it (Mike, 2026-11-25). The drawer frame strip goes into the overhaul. Phase 3 plan: `docs/phase-3-phone-inbox-plan.md`, waiting on approval before coding.
+- Phase 3 now, design overhaul after it (Mike, 2026-11-25). Mike's phone is Android: the phone client is an installable web app (share target) served by the Worker. The drawer frame strip goes into the overhaul. Phase 3 plan: `docs/phase-3-phone-inbox-plan.md`, waiting on approval before coding.
 - Then phase 3 (Worker inbox + phone app + sync) and phase 4 (vision pass, pilot schema; flag medium-confidence labels, where all 3 pilot misses were).
