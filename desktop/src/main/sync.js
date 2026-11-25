@@ -35,7 +35,10 @@ export class InboxError extends Error {
 
 function base(inboxUrl) {
   const u = String(inboxUrl || '').trim().replace(/\/+$/, '')
-  if (!/^https:\/\/[^\s/]+/i.test(u)) throw new InboxError('The inbox address should start with https://')
+  // http only for a Worker running on this Mac (wrangler dev).
+  if (!/^https:\/\/[^\s/]+/i.test(u) && !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(u)) {
+    throw new InboxError('The inbox address should start with https://')
+  }
   return u
 }
 

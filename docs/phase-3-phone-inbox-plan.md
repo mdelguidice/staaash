@@ -1,6 +1,6 @@
 # Phase 3 plan: phone inbox and sync
 
-Status: draft 2026-11-25. Waiting on Mike's approval and two answers (see "Open questions").
+Status: approved 2026-11-25 (Android web app, 2-minute window) and built. Waiting on Mike's test on his Mac and phone.
 
 Goal: save a link, a screenshot, or both from the phone. It lands in staaash on the Mac the next time the app syncs, even if the Mac was asleep when it was saved.
 
@@ -106,7 +106,33 @@ TypeScript, wrangler, tested locally with `@cloudflare/vitest-pool-workers`. Not
 - **Instagram's share sheet gives a link, not the image.** Those saves get the placeholder until phase 4's frame fetch, the same as imported saves.
 - **The Worker free tier is fine for one person** (estimate: well under 1% of the daily request limit). R2 storage grows with screenshots, at about 1 GB per ~2,000 screenshots (estimate).
 
-## Open questions
+## As built
 
-1. An installable web app as the Android client (recommended), or a native Android app?
-2. Is a 2-minute merge window right?
+- **Schema v4** (`schema.js`): table rebuilt with `url` and `normalized_url` nullable. Adds `kind`. Phone items are recorded in a new `inbox_applied` table rather than a column, because several phone items can land in one save. Orphaned tag/frame links are cleared first so they can't block the upgrade. Backup first, as before.
+- **`desktop/src/main/inbox.js`** (no Electron): `applyInboxItem`, `attachLink`, `mergeInto`. Phone Instagram links are stored the way the export import stores them (`/p/{id}/`, `external_id`), so a reel shared from the phone finds the save the import made.
+- **`desktop/src/main/sync.js`** (no Electron): download, write, then mark synced. A failed item stays in the inbox for the next run. File › Sync Phone Inbox reports; background runs show a toast only when something arrives.
+- **App:** Settings › Phone inbox (address, desktop token, Test connection). Image saves show "From phone" and the note or "Screenshot · 25 Nov"; the drawer has Paste link and hides Open. A new phone link gets the usual preview fetch, but a screenshot sent with it stays the cover.
+- **`worker/`:** Worker, D1 migration, R2, the phone app in `public/app/` (share target, offline queue in IndexedDB, background sync), `setup.sh`, README.
+- **Retries:** each phone save carries a `client_id`, so a retry of a save that did arrive is stored once.
+- **Tests:** `cd mcp && npm test` (48) and `cd worker && npm test` (15). Also checked end to end in a phone-sized Chrome against `wrangler dev`: setup with a wrong and a right token, a shared reel, two screenshots saved offline and sent on reopen, then the Mac sync pulling both into one save.
+
+Found while building:
+- The merge window joins **any** link-only and image-only save made within 2 minutes, related or not. Share a reel, then an unrelated screenshot a minute later, and they become one save. Paste link fixes the other direction, but nothing splits a wrong merge yet. If this bites, shrink the window (`LIMITS.mergeSeconds` in `worker/src/index.ts`) or ask in the save sheet.
+- HEIC photos are accepted but Chromium can't show them, so the card would be blank. Android screenshots are PNG or JPEG, so this only matters for camera photos.
+- R2 must be turned on in the Cloudflare dashboard once (it asks for a card even on the free tier). `setup.sh` says so if bucket creation fails.
+
+## Mike's test
+
+1. On the Mac, pull, then run `cd ~/staaash/mcp && npm test` and expect 48 passing.
+2. Start the app with `cd ~/staaash/desktop && npm run dev`. It backs up the library (`staaash.db.bak-pre-v4-…`) and upgrades it to v4. Check that your saves, tags and search look unchanged.
+3. Run `cd ~/staaash/worker && ./setup.sh` and copy the address and both tokens.
+4. In staaash › Settings › Phone inbox, paste the address and desktop token, click Test connection (expect "Connected. 0 items waiting."), then Save.
+5. On the phone, open `<address>/app` in Chrome, tap ⋮ › Install app, open staaash, and paste the phone token.
+6. Try each of these, then choose File › Sync Phone Inbox on the Mac:
+   - a link from Chrome
+   - a reel from Instagram, including one already in the library: it should not duplicate
+   - a screenshot from the screenshot preview
+   - a screenshot, then its link within 2 minutes: one save
+   - a save in airplane mode: the app says "Queued". Turn airplane mode off and open the app: it sends.
+7. On an image-only save, click Paste link with a link on the clipboard. Try once with a new link and once with one already saved; the second should offer Merge.
+8. Ask Claude Code about a phone screenshot. It should show `kind: image` and `url: null`.
